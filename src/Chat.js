@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import './Chat.css';
 import Geogebra from 'react-geogebra';
+import 'katex/dist/katex.min.css';
+import { InlineMath, BlockMath } from 'react-katex';
 
 function Chat() {
     // 定义输入状态和消息历史记录状态
@@ -10,7 +12,7 @@ function Chat() {
         // 初始系统消息，设置GeoGebra指令生成器的规则
         {
             sender: 'system',
-            text: "你是 geoGebra 指令生成器。如果用户给你一个几个图像的描述，请你给出生成的每一个步骤和对应的 geoGebra 指令。每个步骤以 1. 2. 3. 4. 这样的形式给出，并用换行隔开。geoGebra 指令格式为 ```\nA(0,0)\nB(1,0)\nC(0.5, sqrt(3)/2)\nPolygon[A,B,C]\n```请不要在指令中添加任何其他文字。"
+            text: "你是 geoGebra 指令生成器。如果用户给你一个几个图像的描述，请你给出生成的每一个步骤和对应的 geoGebra 指令。详细说明推理过程。每个步骤以 1. 2. 3. 4. 这样的形式给出，并用换行隔开。geoGebra 指令格式为 ```\nA(0,0)\nB(1,0)\nC(0.5, sqrt(3)/2)\nPolygon[A,B,C]\n```请不要在指令中添加任何其他文字，且步骤描述中请不要使用```字符"
         },
         // 助手确认消息
         {
@@ -19,13 +21,13 @@ function Chat() {
         },
         // 示例用户消息
         {
-            sender: 'user',
+            sender: 'user', 
             text: '请画出正三角形 ABC'  
         },
         // 示例助手回复
         {
             sender: 'assistant',
-            text: "Let's think step by step.\n1. 画出点 A\n2. 画出点 B\n3. 画出点 C\n4. 画出三角形 ABC\n ```\nA(0,0)\nB(1,0)\nC(0.5, sqrt(3)/2)\nPolygon[A,B,C]\n```"
+            text: "Let's think step by step.\n1. 1. 首先，在坐标系中定义点 A。我们可以将 A 设置在原点 (0, 0)。\n2. 然后定义点 B，设置为 (1, 0)，这将是正三角形的一条边的一个顶点。\n3. 接下来，定义点 C。对于正三角形，C 的坐标可以计算为 (0.5, sqrt(3)/2)，这是与点 A 和 B 的距离相等且形成 60° 角的点。\n4. 最后，使用 Polygon 指令连接这三个点 A、B 和 C，构成正三角形 ABC。\n ```A(0,0)\nB(1,0)\nC(0.5, sqrt(3)/2)\nPolygon[A,B,C]```"
         },
     ]);
     // 定义加载状态
@@ -46,20 +48,20 @@ function Chat() {
 
     // 发送消息的异步函数
     const sendMessage = async () => {
-        // 如果输入为空或正在加载，则返回
         if (!input.trim() || isLoading) return;
 
-        // 创建用户消息对象并添加到消息历史
         const userMessage = { sender: 'user', text: input };
         setMessages(prev => [...prev, userMessage]);
+        const currentInput = input;  // 현재 입력값 저장
+        setInput('');  // 입력값 초기화
         setIsLoading(true);
-        const app = window.app1;
         
-        // 重置GeoGebra画板
+        const app = window.app1;
         app.reset();
         
         try {
             // 发送API请求到OpenAI
+            console.log('sending message...')
             const response = await axios.post(
                 'https://api.openai.com/v1/chat/completions',
                 {
@@ -86,10 +88,11 @@ function Chat() {
             
             // 处理响应文本，规范化换行符
             const normalizedText = responseText.replace(/\n{2,}/g, '\n');
-            // 提取代码块中的命令
+            // 提取代码块中的指令
             const commands = normalizedText.match(/```\n([\s\S]*?)\n```/s);
-
-            console.log(commands);
+            console.log('responseText: ', responseText);
+            console.log('normalizedText: ', normalizedText);
+            console.log('commands: ', commands);
             // 执行GeoGebra命令
             if (commands && commands[1]) {
                 const commandLines = commands[1].split('\n');
@@ -113,87 +116,234 @@ function Chat() {
             }]);
         }
 
-        // 重置状态
         setIsLoading(false);
-        setInput('');
     };
 
     // 代码块组件：显示和编辑GeoGebra命令
-    const CodeBlock = ({ code, onCodeChange, executeCommands }) => (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            <textarea
-                value={code}
-                onChange={(e) => onCodeChange(e.target.value)}
-                style={{
-                    width: '95%',
-                    minHeight: '100px',
-                    fontFamily: 'monospace',
-                    fontSize: '16px',
-                    lineHeight: '1.5',
-                    padding: '8px',
-                    marginTop: '8px',
-                    marginBottom: '8px',
-                    backgroundColor: '#f5f5f5',
-                    border: '1px solid #ddd',
-                    borderRadius: '4px'
-                }}
-            />
-            <button
-                onClick={() => executeCommands(code)}
-                style={{
-                    padding: '8px 16px',
-                    backgroundColor: '#4CAF50',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    fontSize: '14px'
-                }}
+    const CodeBlock = ({ code, onCodeChange, executeCommands }) => {
+        const [localCode, setLocalCode] = useState(code);
+        const [isHovered, setIsHovered] = useState(false);
+
+        const copyToClipboard = (text) => {
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            document.body.appendChild(textarea);
+            
+            try {
+                textarea.select();
+                document.execCommand('copy');
+                alert('复制成功！');
+            } catch (err) {
+                console.error('复制失败:', err);
+                alert('复制失败');
+            } finally {
+                document.body.removeChild(textarea);
+            }
+        };
+
+        useEffect(() => {
+            setLocalCode(code);
+        }, [code]);
+
+        const handleModify = () => {
+            onCodeChange(localCode);
+            executeCommands(localCode);
+        };
+
+        return (
+            <div 
+                style={{ display: 'flex', flexDirection: 'column', gap: '10px', position: 'relative', width: '100%' }}
+                onMouseEnter={() => setIsHovered(true)}
+                onMouseLeave={() => setIsHovered(false)}
             >
-                修改
-            </button>
-        </div>
-    );
+                <div style={{ position: 'relative', width: '100%' }}>
+                    <button
+                        onClick={() => copyToClipboard(localCode)}
+                        style={{
+                            position: 'absolute',
+                            top: '13px',
+                            right: '25px',
+                            padding: '4px 8px',
+                            backgroundColor: '#f0f0f0',
+                            border: '1px solid #ddd',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: 'var(--font-size-base)',
+                            color: '#666',
+                            zIndex: 1,
+                            opacity: isHovered ? 1 : 0,
+                            transition: 'opacity 0.2s'
+                        }}
+                    >
+                        复制
+                    </button>
+                    <textarea
+                        value={localCode}
+                        onChange={(e) => setLocalCode(e.target.value)}
+                        style={{
+                            width: '100%',
+                            minHeight: '100px',
+                            fontFamily: 'monospace',
+                            fontSize: 'var(--font-size-base)',
+                            lineHeight: '1.5',
+                            padding: '8px',
+                            paddingRight: '80px',
+                            marginTop: '8px',
+                            marginBottom: '8px',
+                            backgroundColor: '#f5f5f5',
+                            border: '1px solid #ddd',
+                            borderRadius: '4px',
+                            resize: 'vertical',
+                            boxSizing: 'border-box'
+                        }}
+                    />
+                </div>
+                <button
+                    onClick={handleModify}
+                    style={{
+                        padding: '8px 16px',
+                        backgroundColor: '#4CAF50',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: 'var(--font-size-base)'
+                    }}
+                >
+                    修改
+                </button>
+            </div>
+        );
+    };
 
     // 消息内容组件：处理消息文本和代码块的显示
     const MessageContent = ({ text, onCodeChange }) => {
-        // 分割文本和代码块
-        const parts = text.split(/```\n([\s\S]*?)\n```/);
+        const [isHovered, setIsHovered] = useState(false);
+
+        const copyToClipboard = (text) => {
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            document.body.appendChild(textarea);
+            
+            try {
+                textarea.select();
+                document.execCommand('copy');
+                alert('复制成功！');
+            } catch (err) {
+                console.error('复制失败:', err);
+                alert('复制失败');
+            } finally {
+                document.body.removeChild(textarea);
+            }
+        };
+
+        const parseContent = (text) => {
+            const parts = [];
+            let currentText = '';
+            let i = 0;
+            
+            while (i < text.length) {
+                if (text.slice(i).match(/^([A-Z]+\^?[0-9]*(=|\+|-|\*|\/)?)+/)) {
+                    if (currentText) {
+                        parts.push({ type: 'text', content: currentText });
+                        currentText = '';
+                    }
+                    const match = text.slice(i).match(/^([A-Z]+\^?[0-9]*(=|\+|-|\*|\/)?)+/)[0];
+                    parts.push({ type: 'inline-math', content: match });
+                    i += match.length;
+                    continue;
+                } else if (text.slice(i, i + 3) === '```') {
+                    if (currentText) {
+                        parts.push({ type: 'text', content: currentText });
+                        currentText = '';
+                    }
+                    const endIndex = text.indexOf('```', i + 3);
+                    if (endIndex !== -1) {
+                        parts.push({ type: 'code', content: text.slice(i + 3, endIndex).trim() });
+                        i = endIndex + 3;
+                        continue;
+                    }
+                }
+                currentText += text[i];
+                i++;
+            }
+            
+            if (currentText) {
+                parts.push({ type: 'text', content: currentText });
+            }
+            
+            return parts;
+        };
+
+        const parts = parseContent(text);
         const app = window.app1;
 
-        // 执行GeoGebra命令的函数
         const executeCommands = (code) => {
+            app.reset();
             const commandLines = code.split('\n');
-            app.reset(); // 重置画板
             commandLines.forEach(command => {
                 if (command.trim()) {
                     app.evalCommand(command.trim());
                 }
             });
         };
-        
+
         return (
-            <>
+            <div 
+                style={{ lineHeight: '1.6', position: 'relative' }}
+                onMouseEnter={() => setIsHovered(true)}
+                onMouseLeave={() => setIsHovered(false)}
+            >
+                <button
+                    onClick={() => copyToClipboard(text)}
+                    style={{
+                        position: 'absolute',
+                        top: '5px',
+                        right: '5px',
+                        padding: '4px 8px',
+                        backgroundColor: '#f0f0f0',
+                        border: '1px solid #ddd',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: 'var(--font-size-base)',
+                        color: '#666',
+                        opacity: isHovered ? 1 : 0,
+                        transition: 'opacity 0.2s',
+                    }}
+                >
+                    复制
+                </button>
+                
                 {parts.map((part, index) => {
-                    if (index % 2 === 0) {
-                        // 渲染普通文本
-                        return part.split('\n').map((line, i) => (
-                            <React.Fragment key={i}>
-                                {line}
-                                {i < part.split('\n').length - 1 && <br />}
-                            </React.Fragment>
-                        ));
-                    } else {
-                        // 渲染代码块
-                        return <CodeBlock 
-                            key={index} 
-                            code={part} 
-                            onCodeChange={(newCode) => onCodeChange(text.replace(/```\n[\s\S]*?\n```/, '```\n' + newCode + '\n```'))}
-                            executeCommands={executeCommands}
-                        />;
+                    switch (part.type) {
+                        case 'code':
+                            return (
+                                <CodeBlock
+                                    key={index}
+                                    code={part.content}
+                                    onCodeChange={(newCode) => {
+                                        const newText = text.replace(/```\n[\s\S]*?\n```/, '```\n' + newCode + '\n```');
+                                        onCodeChange(newText);
+                                    }}
+                                    executeCommands={executeCommands}
+                                />
+                            );
+                        case 'inline-math':
+                            return <InlineMath key={index} math={part.content.replace(/\^/g, '^').replace(/=/g, '=')} />;
+                        default:
+                            return (
+                                <span key={index}>
+                                    {part.content.split('\n').map((line, i) => (
+                                        <React.Fragment key={i}>
+                                            {line}
+                                            {i < part.content.split('\n').length - 1 && <br />}
+                                        </React.Fragment>
+                                    ))}
+                                </span>
+                            );
                     }
                 })}
-            </>
+            </div>
         );
     };
 
@@ -224,6 +374,18 @@ function Chat() {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
+    };
+
+    // messages 업데이트 함수 추가
+    const updateMessage = (index, newText) => {
+        setMessages(prevMessages => {
+            const newMessages = [...prevMessages];
+            newMessages[index] = {
+                ...newMessages[index],
+                text: newText
+            };
+            return newMessages;
+        });
     };
 
     // 渲染主界面
@@ -259,7 +421,7 @@ function Chat() {
                             fontSize: '14px'
                         }}
                     >
-                        保存聊天
+                        保存聊天记录
                     </button>
                 </div>
                 
@@ -271,9 +433,7 @@ function Chat() {
                                 <MessageContent 
                                     text={msg.text} 
                                     onCodeChange={(newText) => {
-                                        setMessages(prev => prev.map((m, i) => 
-                                            i === index + 4 ? {...m, text: newText} : m
-                                        ));
+                                        updateMessage(index + 4, newText);  // index + 4로 실제 인덱스 계산
                                     }}
                                 />
                             </div>
@@ -296,8 +456,12 @@ function Chat() {
                         type="text"
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
-                        placeholder="给ChatGPT发送消息"
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !isLoading) {
+                                sendMessage();
+                            }
+                        }}
+                        placeholder="请输入几何描述（例如：画出正三角形 ABC）"
                         disabled={isLoading}
                     />
                     <button 

@@ -8,9 +8,11 @@
     "@testing-library/user-event": "^13.5.0",
     "axios": "^1.7.9",
     "fs": "^0.0.1-security",
+    "katex": "^0.16.11",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-geogebra": "^1.2.5",
+    "react-katex": "^3.0.1",
     "react-scripts": "5.0.1",
     "web-vitals": "^2.1.4"
   },

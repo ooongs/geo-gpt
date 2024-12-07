@@ -1,21 +1,22 @@
+:root {
+    --font-size-base: 13px;
+}
+
 .chat-container {
+    width: 800px;
+    height: 800px;
     display: flex;
     flex-direction: column;
-    height: 600px;
-    width: 800px;
-    justify-content: flex-end;
-    padding: 20px;
-    background-color: #f7f7f7;
-    border: 1px solid #ccc;
+    border: 1px solid #ddd;
     border-radius: 8px;
-    margin: 20px;
+    font-size: var(--font-size-base);
 }
 
 .messages {
     flex: 1;
     overflow-y: auto;
-    margin-bottom: 20px;
-    max-height: calc(600px - 120px);
+    padding: 20px;
+    height: calc(800px - 120px);
 }
 
 .message {
@@ -39,38 +40,71 @@
 }
 
 .input-container {
+    padding: 20px;
+    border-top: 1px solid #ddd;
     display: flex;
-    align-items: center;
+    gap: 10px;
 }
 
-input[type="text"] {
+.input-container input {
     flex: 1;
     padding: 10px;
-    border: 1px solid #ccc;
-    border-radius: 5px;
-    margin-right: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: var(--font-size-base);
 }
 
-button {
+.input-container button {
     padding: 10px 20px;
     background-color: #484fdcc2;
     color: white;
     border: none;
-    border-radius: 5px;
+    border-radius: 4px;
     cursor: pointer;
-}
-
-button:hover {
-    background-color: #484fdcc2;
+    font-size: var(--font-size-base);
 }
 
 .message-content {
-    word-break: break-word;
-    line-height: 1.5;
+    padding: 12px;
+    border-radius: 8px;
+    background-color: #f8f9fa;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    font-size: var(--font-size-base);
+    line-height: 1.6;
+}
+
+.katex {
+    font-size: var(--font-size-base) !important;
 }
 
 .input-container input:disabled,
 .input-container button:disabled {
     opacity: 0.7;
     cursor: not-allowed;
+}
+
+.message.user .message-content {
+    background-color: #ffffff;
+    color: #000000;
+    margin-left: auto;
+    max-width: 100%;
+    border: 1px solid #e0e0e0;
+}
+
+.message.gpt .message-content {
+    background-color: #f8f9fa;
+    color: #212529;
+    margin-right: auto;
+    max-width: 100%;
+}
+
+.message.user .katex {
+    color: #000000;
+}
+
+.chat-container > div:first-child {
+    border-bottom: 1px solid #ddd;
+    padding: 10px;
+    display: flex;
+    justify-content: flex-end;
 } 
