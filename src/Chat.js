@@ -3,33 +3,13 @@ import axios from 'axios';
 import './Chat.css';
 import Geogebra from 'react-geogebra';
 import 'katex/dist/katex.min.css';
-import { InlineMath, BlockMath } from 'react-katex';
+import { InlineMath } from 'react-katex';
+import { SYSTEM_PROMPTS } from './constants/prompts';
 
 function Chat() {
     // 定义输入状态和消息历史记录状态
     const [input, setInput] = useState('');
-    const [messages, setMessages] = useState([
-        // 初始系统消息，设置GeoGebra指令生成器的规则
-        {
-            sender: 'system',
-            text: "你是 geoGebra 指令生成器。如果用户给你一个几个图像的描述，请你给出生成的每一个步骤和对应的 geoGebra 指令。详细说明推理过程。每个步骤以 1. 2. 3. 4. 这样的形式给出，并用换行隔开。geoGebra 指令格式为 ```\nA(0,0)\nB(1,0)\nC(0.5, sqrt(3)/2)\nPolygon[A,B,C]\n```请不要在指令中添加任何其他文字，且步骤描述中请不要使用```字符"
-        },
-        // 助手确认消息
-        {
-            sender: 'assistant',
-            text: 'Sure, I will follow all rules.'
-        },
-        // 示例用户消息
-        {
-            sender: 'user', 
-            text: '请画出正三角形 ABC'  
-        },
-        // 示例助手回复
-        {
-            sender: 'assistant',
-            text: "Let's think step by step.\n1. 1. 首先，在坐标系中定义点 A。我们可以将 A 设置在原点 (0, 0)。\n2. 然后定义点 B，设置为 (1, 0)，这将是正三角形的一条边的一个顶点。\n3. 接下来，定义点 C。对于正三角形，C 的坐标可以计算为 (0.5, sqrt(3)/2)，这是与点 A 和 B 的距离相等且形成 60° 角的点。\n4. 最后，使用 Polygon 指令连接这三个点 A、B 和 C，构成正三角形 ABC。\n ```A(0,0)\nB(1,0)\nC(0.5, sqrt(3)/2)\nPolygon[A,B,C]```"
-        },
-    ]);
+    const [messages, setMessages] = useState([...SYSTEM_PROMPTS]);
     // 定义加载状态
     const [isLoading, setIsLoading] = useState(false);
 
@@ -52,7 +32,6 @@ function Chat() {
 
         const userMessage = { sender: 'user', text: input };
         setMessages(prev => [...prev, userMessage]);
-        const currentInput = input;  // 현재 입력값 저장
         setInput('');  // 입력값 초기화
         setIsLoading(true);
         
@@ -62,20 +41,23 @@ function Chat() {
         try {
             // 发送API请求到OpenAI
             console.log('sending message...')
+            const newMessages = [
+                ...SYSTEM_PROMPTS,  // 시스템 프롬프트 먼저 전송
+                ...messages.slice(SYSTEM_PROMPTS.length).map(msg => ({  // 시스템 프롬프트 이후의 메시지들만 매핑
+                    role: msg.role,
+                    content: msg.text
+                })),
+                {
+                    role: 'user',
+                    content: input
+                }
+            ]
+            console.log(newMessages)
             const response = await axios.post(
                 'https://api.openai.com/v1/chat/completions',
                 {
                     model: "gpt-4o-mini",
-                    messages: [
-                        ...messages.map(msg => ({
-                            role: msg.sender === 'user' ? 'user' : 'assistant',
-                            content: msg.text
-                        })),
-                        {
-                            role: 'user',
-                            content: input
-                        }
-                    ]
+                    messages: newMessages
                 },
                 {
                     headers: {
@@ -89,7 +71,7 @@ function Chat() {
             // 处理响应文本，规范化换行符
             const normalizedText = responseText.replace(/\n{2,}/g, '\n');
             // 提取代码块中的指令
-            const commands = normalizedText.match(/```\n([\s\S]*?)\n```/s);
+            const commands = normalizedText.match(/```\s*([\s\S]*?)\s*```/s);
             console.log('responseText: ', responseText);
             console.log('normalizedText: ', normalizedText);
             console.log('commands: ', commands);
@@ -102,7 +84,7 @@ function Chat() {
             }
             // 添加GPT响应消息历史
             const gptMessage = {
-                sender: 'gpt',
+                role: 'assistant',
                 text: responseText
             };
             setMessages(prev => [...prev, gptMessage]);
@@ -111,7 +93,7 @@ function Chat() {
             // 错误处理
             console.error('Error:', error);
             setMessages(prev => [...prev, {
-                sender: 'gpt',
+                sender: 'assistant',
                 text: '抱歉，发生错误。'
             }]);
         }
@@ -350,7 +332,7 @@ function Chat() {
     // 保存聊天记录的函数
     const saveChat = () => {
         const chatPairs = [];
-        for (let i = 4; i < messages.length; i += 2) {
+        for (let i = SYSTEM_PROMPTS.length; i < messages.length; i += 2) {
             if (i + 1 < messages.length) {
                 chatPairs.push({
                     input: messages[i].text,
@@ -427,7 +409,7 @@ function Chat() {
                 
                 {/* 消息显示区域 */}
                 <div className="messages">
-                    {messages.slice(4).map((msg, index) => (
+                    {messages.slice(SYSTEM_PROMPTS.length).map((msg, index) => (
                         <div key={index} className={`message ${msg.sender}`}>
                             <div className="message-content">
                                 <MessageContent 
