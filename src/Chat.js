@@ -30,9 +30,9 @@ function Chat() {
     const sendMessage = async () => {
         if (!input.trim() || isLoading) return;
 
-        const userMessage = { sender: 'user', text: input };
+        const userMessage = { role: 'user', text: input };
         setMessages(prev => [...prev, userMessage]);
-        setInput('');  // 입력값 초기화
+        setInput('');  // 입값 초기화
         setIsLoading(true);
         
         const app = window.app1;
@@ -93,7 +93,7 @@ function Chat() {
             // 错误处理
             console.error('Error:', error);
             setMessages(prev => [...prev, {
-                sender: 'assistant',
+                role: 'assistant',
                 text: '抱歉，发生错误。'
             }]);
         }
@@ -128,8 +128,10 @@ function Chat() {
         }, [code]);
 
         const handleModify = () => {
-            onCodeChange(localCode);
-            executeCommands(localCode);
+            if (localCode !== code) {
+                onCodeChange(localCode);
+                executeCommands(localCode);
+            }
         };
 
         return (
@@ -257,45 +259,32 @@ function Chat() {
             return parts;
         };
 
-        const parts = parseContent(text);
-        const app = window.app1;
-
         const executeCommands = (code) => {
+            const app = window.app1;
+            if (!app) return;
+            
             app.reset();
+            app.enable3D();
+            
             const commandLines = code.split('\n');
             commandLines.forEach(command => {
                 if (command.trim()) {
-                    app.evalCommand(command.trim());
+                    try {
+                        app.evalCommand(command.trim());
+                    } catch (error) {
+                        console.error('Command execution error:', error);
+                    }
                 }
             });
         };
 
+        const parts = parseContent(text);
+
         return (
-            <div 
-                style={{ lineHeight: '1.6', position: 'relative' }}
+            <div style={{ lineHeight: '1.6', position: 'relative' }}
                 onMouseEnter={() => setIsHovered(true)}
                 onMouseLeave={() => setIsHovered(false)}
             >
-                <button
-                    onClick={() => copyToClipboard(text)}
-                    style={{
-                        position: 'absolute',
-                        top: '5px',
-                        right: '5px',
-                        padding: '4px 8px',
-                        backgroundColor: '#f0f0f0',
-                        border: '1px solid #ddd',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        fontSize: 'var(--font-size-base)',
-                        color: '#666',
-                        opacity: isHovered ? 1 : 0,
-                        transition: 'opacity 0.2s',
-                    }}
-                >
-                    复制
-                </button>
-                
                 {parts.map((part, index) => {
                     switch (part.type) {
                         case 'code':
@@ -304,7 +293,9 @@ function Chat() {
                                     key={index}
                                     code={part.content}
                                     onCodeChange={(newCode) => {
-                                        const newText = text.replace(/```\n[\s\S]*?\n```/, '```\n' + newCode + '\n```');
+                                        const beforeCode = text.split('```')[0];
+                                        const afterCode = text.split('```')[2];
+                                        const newText = beforeCode + '```\n' + newCode + '\n```' + (afterCode || '');
                                         onCodeChange(newText);
                                     }}
                                     executeCommands={executeCommands}
@@ -362,10 +353,13 @@ function Chat() {
     const updateMessage = (index, newText) => {
         setMessages(prevMessages => {
             const newMessages = [...prevMessages];
-            newMessages[index] = {
-                ...newMessages[index],
-                text: newText
-            };
+            const actualIndex = index + SYSTEM_PROMPTS.length;
+            if (actualIndex < newMessages.length) {
+                newMessages[actualIndex] = {
+                    ...newMessages[actualIndex],
+                    text: newText
+                };
+            }
             return newMessages;
         });
     };
@@ -410,12 +404,12 @@ function Chat() {
                 {/* 消息显示区域 */}
                 <div className="messages">
                     {messages.slice(SYSTEM_PROMPTS.length).map((msg, index) => (
-                        <div key={index} className={`message ${msg.sender}`}>
+                        <div key={index} className={`message ${msg.role}`}>
                             <div className="message-content">
                                 <MessageContent 
                                     text={msg.text} 
                                     onCodeChange={(newText) => {
-                                        updateMessage(index + 4, newText);  // index + 4로 실제 인덱스 계산
+                                        updateMessage(index, newText);
                                     }}
                                 />
                             </div>
