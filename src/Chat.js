@@ -1,329 +1,148 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import './Chat.css';
 import Geogebra from 'react-geogebra';
 import 'katex/dist/katex.min.css';
-import { InlineMath } from 'react-katex';
-import { SYSTEM_PROMPTS } from './constants/prompts';
+import MessageContent from './components/MessageContent';
+import SuggestedQueries from './components/SuggestedQueries';
+import SuggestedCommandsList from './components/SuggestedCommands';
+import { executeGeoGebraCommands, resetGeoGebra } from './utils/geogebraUtils';
+import ModelSelector from './components/ModelSelector';
+import SearchResults from './components/SearchResults';
 
 function Chat() {
-    // 定义输入状态和消息历史记录状态
+    // 상태 관리
     const [input, setInput] = useState('');
-    const [messages, setMessages] = useState([...SYSTEM_PROMPTS]);
-    // 定义加载状态
+    const [messages, setMessages] = useState([]); // 시스템 프롬프트 제외
     const [isLoading, setIsLoading] = useState(false);
+    const [searchResults, setSearchResults] = useState([]); // 검색 결과 상태 추가
+    const [isSearching, setIsSearching] = useState(false); // 검색 중 상태 추가
+    const [suggestedCommands, setSuggestedCommands] = useState([]);
+    const [suggestedQueries, setSuggestedQueries] = useState([
+        "请画出边长为5的正三角形 ",
+        "请画出过(0,0)、(1,2)、(2,2)的圆",
+        "请画出边长为2的正方形",
+        "请画出圆心为(0,0)、半径为2的圆",
+        "请画出正四面体"
+    ]);
+    const [selectedModel, setSelectedModel] = useState('gpt-4o-mini');
 
-    // 添加消息容器的引用
-    const messagesEndRef = React.useRef(null);
+    // 메시지 컨테이너 참조
+    const messagesEndRef = useRef(null);
 
-    // 滚动到底部的函数
+    // 스크롤 관련 함수
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     };
 
-    // 每当消息更新时滚动
-    React.useEffect(() => {
+    // 메시지 업데이트 시 스크롤
+    useEffect(() => {
         scrollToBottom();
     }, [messages]);
 
-    // 发送消息的异步函数
+    // 모델 옵션 정의
+    const modelOptions = [
+        { id: 'gpt-4o-mini', name: 'ChatGPT (GPT-4o-mini)' },
+        { id: 'deepseek-chat', name: 'DeepSeek Chat' }
+    ];
+
+    // 명령어 검색 함수
+    const searchCommands = async (query) => {
+        setIsSearching(true);
+        try {
+            const response = await axios.post(
+                'http://localhost:8000/search-command',
+                {
+                    query: query,
+                    top_k: 5,
+                    threshold: 0.5 // 유사도 임계값
+                }
+            );
+            
+            setSearchResults(response.data.results);
+        } catch (error) {
+            console.error('명령어 검색 오류:', error);
+            setSearchResults([]);
+        }
+        setIsSearching(false);
+    };
+
+    // 메시지 전송 함수
     const sendMessage = async () => {
         if (!input.trim() || isLoading) return;
 
         const userMessage = { role: 'user', text: input };
         setMessages(prev => [...prev, userMessage]);
-        setInput('');  // 입값 초기화
+        setInput('');
         setIsLoading(true);
         
-        const app = window.app1;
-        app.reset();
+        resetGeoGebra();
+        
+        // 동시에 명령어 검색 요청 보내기
+        searchCommands(input);
         
         try {
-            // 发送API请求到OpenAI
+            // API 요청 준비
             console.log('sending message...')
-            const newMessages = [
-                ...SYSTEM_PROMPTS,  // 시스템 프롬프트 먼저 전송
-                ...messages.slice(SYSTEM_PROMPTS.length).map(msg => ({  // 시스템 프롬프트 이후의 메시지들만 매핑
-                    role: msg.role,
-                    content: msg.text
-                })),
-                {
-                    role: 'user',
-                    content: input
-                }
-            ]
-            console.log(newMessages)
+            const apiMessages = messages.map(msg => ({
+                role: msg.role,
+                content: msg.text
+            }));
+            
+            // 현재 사용자 메시지 추가
+            apiMessages.push({
+                role: 'user',
+                content: input
+            });
+            
+            console.log('API Messages:', apiMessages);
+            
+            // 로컬 FastAPI 서버 호출
             const response = await axios.post(
-                'https://api.openai.com/v1/chat/completions',
+                'http://localhost:8000/chat',
                 {
-                    model: "gpt-4o-mini",
-                    messages: newMessages
-                },
-                {
-                    headers: {
-                        'Authorization': `Bearer ${process.env.REACT_APP_OPENAI_API_KEY}`,
-                        'Content-Type': 'application/json'
-                    }
+                    model: selectedModel,
+                    messages: apiMessages
                 }
             );
-            const responseText = response.data.choices[0].message.content;
             
-            // 处理响应文本，规范化换行符
+            const responseText = response.data.content;
+            
+            // 응답 처리
             const normalizedText = responseText.replace(/\n{2,}/g, '\n');
-            // 提取代码块中的指令
             const commands = normalizedText.match(/```\s*([\s\S]*?)\s*```/s);
+            
             console.log('responseText: ', responseText);
             console.log('normalizedText: ', normalizedText);
             console.log('commands: ', commands);
-            // 执行GeoGebra命令
+            
+            // GeoGebra 명령어 실행
             if (commands && commands[1]) {
-                const commandLines = commands[1].split('\n');
-                commandLines.forEach(command => {
-                    app.evalCommand(command.trim());
-                });
+                executeGeoGebraCommands(commands[1]);
             }
-            // 添加GPT响应消息历史
-            const gptMessage = {
+            
+            // 응답 메시지 추가
+            const assistantMessage = {
                 role: 'assistant',
                 text: responseText
             };
-            setMessages(prev => [...prev, gptMessage]);
+            setMessages(prev => [...prev, assistantMessage]);
             
         } catch (error) {
-            // 错误处理
             console.error('Error:', error);
             setMessages(prev => [...prev, {
                 role: 'assistant',
-                text: '抱歉，发生错误。'
+                text: '죄송합니다, 오류가 발생했습니다.'
             }]);
         }
 
         setIsLoading(false);
     };
 
-    // 代码块组件：显示和编辑GeoGebra命令
-    const CodeBlock = ({ code, onCodeChange, executeCommands }) => {
-        const [localCode, setLocalCode] = useState(code);
-        const [isHovered, setIsHovered] = useState(false);
-
-        const copyToClipboard = (text) => {
-            const textarea = document.createElement('textarea');
-            textarea.value = text;
-            document.body.appendChild(textarea);
-            
-            try {
-                textarea.select();
-                document.execCommand('copy');
-                alert('复制成功！');
-            } catch (err) {
-                console.error('复制失败:', err);
-                alert('复制失败');
-            } finally {
-                document.body.removeChild(textarea);
-            }
-        };
-
-        useEffect(() => {
-            setLocalCode(code);
-        }, [code]);
-
-        const handleModify = () => {
-            if (localCode !== code) {
-                onCodeChange(localCode);
-                executeCommands(localCode);
-            }
-        };
-
-        return (
-            <div 
-                style={{ display: 'flex', flexDirection: 'column', gap: '10px', position: 'relative', width: '100%' }}
-                onMouseEnter={() => setIsHovered(true)}
-                onMouseLeave={() => setIsHovered(false)}
-            >
-                <div style={{ position: 'relative', width: '100%' }}>
-                    <button
-                        onClick={() => copyToClipboard(localCode)}
-                        style={{
-                            position: 'absolute',
-                            top: '13px',
-                            right: '25px',
-                            padding: '4px 8px',
-                            backgroundColor: '#f0f0f0',
-                            border: '1px solid #ddd',
-                            borderRadius: '4px',
-                            cursor: 'pointer',
-                            fontSize: 'var(--font-size-base)',
-                            color: '#666',
-                            zIndex: 1,
-                            opacity: isHovered ? 1 : 0,
-                            transition: 'opacity 0.2s'
-                        }}
-                    >
-                        复制
-                    </button>
-                    <textarea
-                        value={localCode}
-                        onChange={(e) => setLocalCode(e.target.value)}
-                        style={{
-                            width: '100%',
-                            minHeight: '100px',
-                            fontFamily: 'monospace',
-                            fontSize: 'var(--font-size-base)',
-                            lineHeight: '1.5',
-                            padding: '8px',
-                            paddingRight: '80px',
-                            marginTop: '8px',
-                            marginBottom: '8px',
-                            backgroundColor: '#f5f5f5',
-                            border: '1px solid #ddd',
-                            borderRadius: '4px',
-                            resize: 'vertical',
-                            boxSizing: 'border-box'
-                        }}
-                    />
-                </div>
-                <button
-                    onClick={handleModify}
-                    style={{
-                        padding: '8px 16px',
-                        backgroundColor: '#4CAF50',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        fontSize: 'var(--font-size-base)'
-                    }}
-                >
-                    修改
-                </button>
-            </div>
-        );
-    };
-
-    // 消息内容组件：处理消息文本和代码块的显示
-    const MessageContent = ({ text, onCodeChange }) => {
-        const [isHovered, setIsHovered] = useState(false);
-
-        const copyToClipboard = (text) => {
-            const textarea = document.createElement('textarea');
-            textarea.value = text;
-            document.body.appendChild(textarea);
-            
-            try {
-                textarea.select();
-                document.execCommand('copy');
-                alert('复制成功！');
-            } catch (err) {
-                console.error('复制失败:', err);
-                alert('复制失败');
-            } finally {
-                document.body.removeChild(textarea);
-            }
-        };
-
-        const parseContent = (text) => {
-            const parts = [];
-            let currentText = '';
-            let i = 0;
-            
-            while (i < text.length) {
-                if (text.slice(i).match(/^([A-Z]+\^?[0-9]*(=|\+|-|\*|\/)?)+/)) {
-                    if (currentText) {
-                        parts.push({ type: 'text', content: currentText });
-                        currentText = '';
-                    }
-                    const match = text.slice(i).match(/^([A-Z]+\^?[0-9]*(=|\+|-|\*|\/)?)+/)[0];
-                    parts.push({ type: 'inline-math', content: match });
-                    i += match.length;
-                    continue;
-                } else if (text.slice(i, i + 3) === '```') {
-                    if (currentText) {
-                        parts.push({ type: 'text', content: currentText });
-                        currentText = '';
-                    }
-                    const endIndex = text.indexOf('```', i + 3);
-                    if (endIndex !== -1) {
-                        parts.push({ type: 'code', content: text.slice(i + 3, endIndex).trim() });
-                        i = endIndex + 3;
-                        continue;
-                    }
-                }
-                currentText += text[i];
-                i++;
-            }
-            
-            if (currentText) {
-                parts.push({ type: 'text', content: currentText });
-            }
-            
-            return parts;
-        };
-
-        const executeCommands = (code) => {
-            const app = window.app1;
-            if (!app) return;
-            
-            app.reset();
-            app.enable3D();
-            
-            const commandLines = code.split('\n');
-            commandLines.forEach(command => {
-                if (command.trim()) {
-                    try {
-                        app.evalCommand(command.trim());
-                    } catch (error) {
-                        console.error('Command execution error:', error);
-                    }
-                }
-            });
-        };
-
-        const parts = parseContent(text);
-
-        return (
-            <div style={{ lineHeight: '1.6', position: 'relative' }}
-                onMouseEnter={() => setIsHovered(true)}
-                onMouseLeave={() => setIsHovered(false)}
-            >
-                {parts.map((part, index) => {
-                    switch (part.type) {
-                        case 'code':
-                            return (
-                                <CodeBlock
-                                    key={index}
-                                    code={part.content}
-                                    onCodeChange={(newCode) => {
-                                        const beforeCode = text.split('```')[0];
-                                        const afterCode = text.split('```')[2];
-                                        const newText = beforeCode + '```\n' + newCode + '\n```' + (afterCode || '');
-                                        onCodeChange(newText);
-                                    }}
-                                    executeCommands={executeCommands}
-                                />
-                            );
-                        case 'inline-math':
-                            return <InlineMath key={index} math={part.content.replace(/\^/g, '^').replace(/=/g, '=')} />;
-                        default:
-                            return (
-                                <span key={index}>
-                                    {part.content.split('\n').map((line, i) => (
-                                        <React.Fragment key={i}>
-                                            {line}
-                                            {i < part.content.split('\n').length - 1 && <br />}
-                                        </React.Fragment>
-                                    ))}
-                                </span>
-                            );
-                    }
-                })}
-            </div>
-        );
-    };
-
-    // 保存聊天记录的函数
+    // 채팅 저장 함수
     const saveChat = () => {
         const chatPairs = [];
-        for (let i = SYSTEM_PROMPTS.length; i < messages.length; i += 2) {
+        for (let i = 0; i < messages.length; i += 2) {
             if (i + 1 < messages.length) {
                 chatPairs.push({
                     input: messages[i].text,
@@ -337,7 +156,7 @@ function Chat() {
             timestamp: new Date().toISOString()
         };
 
-        // 文件下载逻辑
+        // 파일 다운로드
         const blob = new Blob([JSON.stringify(chatData, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -349,14 +168,13 @@ function Chat() {
         URL.revokeObjectURL(url);
     };
 
-    // messages 업데이트 함수 추가
+    // 메시지 업데이트 함수
     const updateMessage = (index, newText) => {
         setMessages(prevMessages => {
             const newMessages = [...prevMessages];
-            const actualIndex = index + SYSTEM_PROMPTS.length;
-            if (actualIndex < newMessages.length) {
-                newMessages[actualIndex] = {
-                    ...newMessages[actualIndex],
+            if (index < newMessages.length) {
+                newMessages[index] = {
+                    ...newMessages[index],
                     text: newText
                 };
             }
@@ -364,12 +182,32 @@ function Chat() {
         });
     };
 
-    // 渲染主界面
+    // 추천 검색어 선택 함수
+    const selectQuery = (query) => {
+        setInput(query);
+    };
+
+    // 명령어 선택 함수
+    const selectCommand = (command) => {
+        resetGeoGebra();
+        executeGeoGebraCommands(command);
+        
+        // 선택한 명령어를 메시지에 추가
+        const assistantMessage = {
+            role: 'assistant',
+            text: `선택하신 명령어를 실행했습니다:\n\n\`\`\`\n${command}\n\`\`\``
+        };
+        setMessages(prev => [...prev, assistantMessage]);
+        
+        // 추천 명령어 초기화
+        setSuggestedCommands([]);
+    };
+
     return (
         <div style={{ display: 'flex', gap: '20px'}}>
-            {/* GeoGebra画板组件 */}
+            {/* GeoGebra 컴포넌트 */}
             <Geogebra
-                id = 'app1'
+                id='app1'
                 width="800"
                 height="800"
                 showMenuBar
@@ -377,33 +215,39 @@ function Chat() {
                 showAlgebraInput
             />
 
-            {/* 聊天界面容器 */}
-            <div className="chat-container">
-                {/* 保存聊天按钮 */}
+            {/* 채팅 인터페이스 */}
+            <div className="chat-container" style={{ display: 'flex', flexDirection: 'column', flex: 1, width: '500px' }}>
+                {/* 모델 선택 및 채팅 저장 버튼 */}
                 <div style={{ 
                     display: 'flex', 
-                    justifyContent: 'flex-end', 
-                    padding: '10px' 
+                    justifyContent: 'space-between', 
+                    alignItems: 'center',
+                    padding: '5px' 
                 }}>
+                    <ModelSelector 
+                        selectedModel={selectedModel}
+                        setSelectedModel={setSelectedModel}
+                        modelOptions={modelOptions}
+                    />
                     <button
                         onClick={saveChat}
                         style={{
-                            padding: '8px 16px',
+                            padding: '6px 12px',
                             backgroundColor: '#484fdcc2',
                             color: 'white',
                             border: 'none',
                             borderRadius: '4px',
                             cursor: 'pointer',
-                            fontSize: '14px'
+                            fontSize: '13px'
                         }}
                     >
-                        保存聊天记录
+                        채팅 기록 저장
                     </button>
                 </div>
                 
-                {/* 消息显示区域 */}
-                <div className="messages">
-                    {messages.slice(SYSTEM_PROMPTS.length).map((msg, index) => (
+                {/* 메시지 표시 영역 */}
+                <div className="messages" style={{ flex: 1, overflowY: 'auto', maxHeight: 'calc(100vh - 350px)' }}>
+                    {messages.map((msg, index) => (
                         <div key={index} className={`message ${msg.role}`}>
                             <div className="message-content">
                                 <MessageContent 
@@ -415,40 +259,56 @@ function Chat() {
                             </div>
                         </div>
                     ))}
-                    {/* 加载提示 */}
+                    
+                    {/* 로딩 표시 */}
                     {isLoading && (
-                        <div className="message gpt">
+                        <div className="message assistant">
                             <div className="message-content">
-                                正在生成回答...
+                                응답 생성 중...
                             </div>
                         </div>
                     )}
-                    <div ref={messagesEndRef} /> {/* 用于指定滚动位置的元素 */}
+                    <div ref={messagesEndRef} />
                 </div>
                 
-                {/* 输入区域 */}
-                <div className="input-container">
-                    <input
-                        type="text"
-                        value={input}
-                        onChange={(e) => setInput(e.target.value)}
-                        onKeyDown={(e) => {
-                            if (e.key === 'Enter' && !isLoading) {
-                                sendMessage();
-                            }
-                        }}
-                        placeholder="请输入几何描述（例如：画出正三角形 ABC）"
-                        disabled={isLoading}
+                {/* 하단 영역: 추천 검색어 + 입력창 */}
+                <div style={{ padding: '5px', borderTop: '1px solid #eaeaea' }}>
+                    {/* 추천 검색어 표시 */}
+                    <SuggestedQueries 
+                        queries={suggestedQueries} 
+                        onSelect={selectQuery}
                     />
-                    <button 
-                        onClick={sendMessage}
-                        disabled={isLoading}
-                        style={{fontSize: '14px'}}
-                    >
-                        发送
-                    </button>
+                    
+                    {/* 입력 컨테이너 */}
+                    <div className="input-container">
+                        <input
+                            type="text"
+                            value={input}
+                            onChange={(e) => setInput(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter' && !isLoading) {
+                                    sendMessage();
+                                }
+                            }}
+                            placeholder="도형에 대한 설명을 입력하세요"
+                            disabled={isLoading}
+                        />
+                        <button 
+                            onClick={sendMessage}
+                            disabled={isLoading}
+                        >
+                            전송
+                        </button>
+                    </div>
                 </div>
             </div>
+
+            {/* 유사한 명령어 검색 결과 컴포넌트 */}
+            <SearchResults 
+                searchResults={searchResults}
+                isSearching={isSearching}
+                selectCommand={selectCommand}
+            />
         </div>
     );
 }
