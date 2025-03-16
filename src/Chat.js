@@ -52,7 +52,7 @@ function Chat() {
                 {
                     query: query,
                     top_k: 5,
-                    threshold: 0.5 // 유사도 임계값
+                    threshold: 0.8 // 유사도 임계값
                 }
             );
             
