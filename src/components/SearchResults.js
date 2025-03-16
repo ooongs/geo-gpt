@@ -100,7 +100,7 @@ const SearchResults = ({ searchResults, isSearching, selectCommand }) => {
                   fontSize: '14px'
                 }}>
                   <span style={{ color: '#000' }}>相似度: </span>
-                  <span style={{ color: '#4CAF50' }}>{(result.similarity * 100).toFixed(4)}%</span>
+                  <span style={{ color: '#4CAF50' }}>{(result.similarity).toFixed(4)}%</span>
                 </span>
               </div>
               <div style={{

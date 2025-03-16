@@ -23,6 +23,7 @@ function Chat() {
         "请画出正四面体"
     ]);
     const [selectedModel, setSelectedModel] = useState('gpt-4o-mini');
+    const [errorMessage, setErrorMessage] = useState(null);
 
     // 메시지 컨테이너 참조
     const messagesEndRef = useRef(null);
@@ -116,12 +117,31 @@ function Chat() {
             
             // GeoGebra 명령어 실행
             if (commands && commands[1]) {
-                if (commands && commands[1]) {
-                    const commandLines = commands[1].split('\n');
-                    commandLines.forEach(command => {
-                        app.evalCommand(command.trim());
-                    });
-                }
+                setErrorMessage(null); // 새 명령 실행 전 오류 메시지 초기화
+                const commandLines = commands[1].split('\n');
+                const executedCommands = [];
+                
+                commandLines.forEach(command => {
+                    if (!command.trim()) return;
+                    
+                    try {
+                        const success = app.evalCommand(command.trim());
+                        executedCommands.push({
+                            command: command.trim(),
+                            success: success
+                        });
+                        
+                        if (!success) {
+                            console.log(`명령 실행 실패: ${command}`);
+                            // 오류는 MutationObserver가 캡처할 것임
+                        }
+                    } catch (error) {
+                        console.error('명령 실행 예외:', error);
+                    }
+                });
+                
+                // 실행 결과 저장 (선택 사항)
+                console.log('명령 실행 결과:', executedCommands);
             }
             
             // 응답 메시지 추가
@@ -189,6 +209,100 @@ function Chat() {
     const selectQuery = (query) => {
         setInput(query);
     };
+
+    // 더 구조화된 오류 메시지 추출
+    const extractErrorMessage = (dialogNode) => {
+        const dialogContent = dialogNode.querySelector('.dialogContent');
+        if (!dialogContent) return null;
+        
+        const labels = dialogContent.querySelectorAll('.gwt-Label');
+        if (labels.length < 2) return null;
+        
+        // 명령어와 오류 메시지 (첫 두 줄)
+        const command = labels[0].textContent.trim();
+        const errorMsg = labels[1].textContent.trim();
+        
+        // 문법 정보 (Syntax: 이후의 모든 줄)
+        const syntaxLines = [];
+        let syntaxStarted = false;
+        
+        for (let i = 2; i < labels.length; i++) {
+            const text = labels[i].textContent.trim();
+            if (!text) continue;
+            
+            if (text === 'Syntax:') {
+                syntaxStarted = true;
+            } else if (syntaxStarted) {
+                syntaxLines.push(text);
+            }
+        }
+        
+        return `${command} ${errorMsg}${syntaxLines.length ? '\n\n올바른 문법:\n' + syntaxLines.join('\n') : ''}`;
+    };
+
+    useEffect(() => {
+        const observer = new MutationObserver((mutations) => {
+            for (const mutation of mutations) {
+                if (mutation.addedNodes.length) {
+                    for (const node of mutation.addedNodes) {
+                        // 상위 요소가 dialogComponent인지 확인
+                        if (node.classList && node.classList.contains('dialogComponent')) {
+                            console.log('오류 다이얼로그 감지됨:', node);
+                            
+                            // 오류 내용 추출 - dialogContent 내부만 선택
+                            const dialogContent = node.querySelector('.dialogContent');
+                            if (dialogContent) {
+                                // dialogContent 내의 레이블만 선택
+                                const labels = dialogContent.querySelectorAll('.gwt-Label');
+                                
+                                // 레이블 텍스트 모으기
+                                const errorParts = Array.from(labels)
+                                    .map(label => label.textContent.trim())
+                                    .filter(text => text); // 빈 문자열 제거
+                                
+                                const errorMessage = errorParts.join(' ');
+                                console.log('오류 내용:', errorMessage);
+                                setErrorMessage(errorMessage);
+                            }
+                            
+                            // 자동으로 다이얼로그 닫기
+                            setTimeout(() => {
+                                const closeButton = node.querySelector('.dialogTextButton');
+                                if (closeButton) closeButton.click();
+                            }, 2000);
+                            
+                            return; // 첫 번째 오류 메시지만 처리
+                        }
+                        
+                        // 다른 방법: 내부 컴포넌트 확인
+                        const dialogPanel = node.querySelector && node.querySelector('.dialogMainPanel');
+                        if (dialogPanel) {
+                            console.log('오류 다이얼로그 패널 감지됨:', dialogPanel);
+                            
+                            // 명령어와 오류 메시지 추출
+                            const labels = dialogPanel.querySelectorAll('.gwt-Label');
+                            if (labels.length >= 2) {
+                                const errorMessage = `${labels[0].textContent} ${labels[1].textContent}`;
+                                console.log('오류 내용:', errorMessage);
+                                setErrorMessage(errorMessage);
+                            }
+                            
+                            // 자동으로 다이얼로그 닫기
+                            setTimeout(() => {
+                                const closeButton = dialogPanel.querySelector('.dialogTextButton');
+                                if (closeButton) closeButton.click();
+                            }, 2000);
+                        }
+                    }
+                }
+            }
+        });
+        
+        // 문서 전체 관찰
+        observer.observe(document.body, { childList: true, subtree: true });
+        
+        return () => observer.disconnect();
+    }, []);
 
     return (
         <div style={{ display: 'flex', gap: '20px'}}>
@@ -295,6 +409,25 @@ function Chat() {
                 searchResults={searchResults}
                 isSearching={isSearching}
             />
+
+            {/* 오류 메시지 표시 */}
+            {errorMessage && (
+                <div className="error-message" style={{
+                    backgroundColor: '#ffebee',
+                    color: '#d32f2f',
+                    padding: '10px',
+                    borderRadius: '4px',
+                    margin: '10px 0',
+                    fontSize: '14px'
+                }}>
+                    <h4 style={{ margin: '0 0 5px 0' }}>GeoGebra 명령 오류:</h4>
+                    <pre style={{ 
+                        margin: '0',
+                        whiteSpace: 'pre-wrap',
+                        fontSize: '13px'
+                    }}>{errorMessage}</pre>
+                </div>
+            )}
         </div>
     );
 }
