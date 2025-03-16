@@ -21,8 +21,8 @@ const SearchResults = ({ searchResults, isSearching, selectCommand }) => {
         justifyContent: 'space-between',
         alignItems: 'center'
       }}>
-        <span>유사한 명령어 검색 결과</span>
-        {isSearching && <span style={{ fontSize: '14px', color: '#666' }}>검색 중...</span>}
+        <span>相关 GeoGebra 指令</span>
+        {isSearching && <span style={{ fontSize: '14px', color: '#666' }}>搜索中...</span>}
       </h3>
       
       {!isSearching && searchResults.length > 0 ? (
@@ -46,25 +46,11 @@ const SearchResults = ({ searchResults, isSearching, selectCommand }) => {
               }}>
                 <span style={{ 
                   fontWeight: 'bold', 
-                  fontSize: '14px',
-                  color: '#333'
+                  fontSize: '14px'
                 }}>
-                  유사도: {(result.similarity * 100).toFixed(1)}%
+                  <span style={{ color: '#000' }}>相似度: </span>
+                  <span style={{ color: '#4CAF50' }}>{(result.similarity).toFixed(1)}%</span>
                 </span>
-                <button
-                  onClick={() => selectCommand(result.command)}
-                  style={{
-                    padding: '4px 8px',
-                    backgroundColor: '#4CAF50',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    fontSize: '12px'
-                  }}
-                >
-                  실행
-                </button>
               </div>
               <div style={{
                 position: 'relative',
@@ -90,7 +76,7 @@ const SearchResults = ({ searchResults, isSearching, selectCommand }) => {
         </div>
       ) : !isSearching && (
         <div style={{ textAlign: 'center', padding: '20px', color: '#666' }}>
-          <p>검색 결과가 없습니다</p>
+          <p>没有搜索结果</p>
         </div>
       )}
     </div>

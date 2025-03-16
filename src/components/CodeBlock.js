@@ -12,10 +12,10 @@ const CodeBlock = ({ code, onCodeChange, executeCommands }) => {
         try {
             textarea.select();
             document.execCommand('copy');
-            alert('복사 성공!');
+            alert('复制成功!');
         } catch (err) {
-            console.error('복사 실패:', err);
-            alert('복사 실패');
+            console.error('复制失败:', err);
+            alert('复制失败');
         } finally {
             document.body.removeChild(textarea);
         }
@@ -92,7 +92,7 @@ const CodeBlock = ({ code, onCodeChange, executeCommands }) => {
                     fontSize: 'var(--font-size-base)'
                 }}
             >
-                수정
+                修改
             </button>
         </div>
     );

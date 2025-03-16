@@ -5,8 +5,6 @@ import Geogebra from 'react-geogebra';
 import 'katex/dist/katex.min.css';
 import MessageContent from './components/MessageContent';
 import SuggestedQueries from './components/SuggestedQueries';
-import SuggestedCommandsList from './components/SuggestedCommands';
-import { executeGeoGebraCommands, resetGeoGebra } from './utils/geogebraUtils';
 import ModelSelector from './components/ModelSelector';
 import SearchResults from './components/SearchResults';
 
@@ -15,9 +13,8 @@ function Chat() {
     const [input, setInput] = useState('');
     const [messages, setMessages] = useState([]); // 시스템 프롬프트 제외
     const [isLoading, setIsLoading] = useState(false);
-    const [searchResults, setSearchResults] = useState([]); // 검색 결과 상태 추가
-    const [isSearching, setIsSearching] = useState(false); // 검색 중 상태 추가
-    const [suggestedCommands, setSuggestedCommands] = useState([]);
+    const [searchResults, setSearchResults] = useState([]); // 검색 결과 상태 유지
+    const [isSearching, setIsSearching] = useState(false); // 검색 중 상태 유지
     const [suggestedQueries, setSuggestedQueries] = useState([
         "请画出边长为5的正三角形 ",
         "请画出过(0,0)、(1,2)、(2,2)的圆",
@@ -76,8 +73,9 @@ function Chat() {
         setInput('');
         setIsLoading(true);
         
-        resetGeoGebra();
         
+        const app = window.app1;
+        app.reset();
         // 동시에 명령어 검색 요청 보내기
         searchCommands(input);
         
@@ -118,7 +116,12 @@ function Chat() {
             
             // GeoGebra 명령어 실행
             if (commands && commands[1]) {
-                executeGeoGebraCommands(commands[1]);
+                if (commands && commands[1]) {
+                    const commandLines = commands[1].split('\n');
+                    commandLines.forEach(command => {
+                        app.evalCommand(command.trim());
+                    });
+                }
             }
             
             // 응답 메시지 추가
@@ -132,7 +135,7 @@ function Chat() {
             console.error('Error:', error);
             setMessages(prev => [...prev, {
                 role: 'assistant',
-                text: '죄송합니다, 오류가 발생했습니다.'
+                text: '抱歉，发生错误。'
             }]);
         }
 
@@ -187,22 +190,6 @@ function Chat() {
         setInput(query);
     };
 
-    // 명령어 선택 함수
-    const selectCommand = (command) => {
-        resetGeoGebra();
-        executeGeoGebraCommands(command);
-        
-        // 선택한 명령어를 메시지에 추가
-        const assistantMessage = {
-            role: 'assistant',
-            text: `선택하신 명령어를 실행했습니다:\n\n\`\`\`\n${command}\n\`\`\``
-        };
-        setMessages(prev => [...prev, assistantMessage]);
-        
-        // 추천 명령어 초기화
-        setSuggestedCommands([]);
-    };
-
     return (
         <div style={{ display: 'flex', gap: '20px'}}>
             {/* GeoGebra 컴포넌트 */}
@@ -241,7 +228,7 @@ function Chat() {
                             fontSize: '13px'
                         }}
                     >
-                        채팅 기록 저장
+                        保存聊天记录
                     </button>
                 </div>
                 
@@ -264,7 +251,7 @@ function Chat() {
                     {isLoading && (
                         <div className="message assistant">
                             <div className="message-content">
-                                응답 생성 중...
+                                正在生成 GeoGebra 指令...
                             </div>
                         </div>
                     )}
@@ -290,14 +277,14 @@ function Chat() {
                                     sendMessage();
                                 }
                             }}
-                            placeholder="도형에 대한 설명을 입력하세요"
+                            placeholder="请输入几何图形描述"
                             disabled={isLoading}
                         />
                         <button 
                             onClick={sendMessage}
                             disabled={isLoading}
                         >
-                            전송
+                            发送
                         </button>
                     </div>
                 </div>
@@ -307,7 +294,6 @@ function Chat() {
             <SearchResults 
                 searchResults={searchResults}
                 isSearching={isSearching}
-                selectCommand={selectCommand}
             />
         </div>
     );
