@@ -652,6 +652,111 @@ function Chat() {
         console.log("오류 블록 상태 변경:", errorBlocks);
     }, [errorBlocks]);
 
+    // 메시지 컴포넌트 분리
+    const MessageItem = ({ msg, index, updateMessage, changeTab }) => {
+        if (msg.isFeedback) {
+            return (
+                <div className={`message ${msg.role}`} style={{ marginBottom: '10px' }}>
+                    <div className="message-content" style={{ position: 'relative' }}>
+                        {/* 로딩 상태 표시 */}
+                        <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            marginBottom: '10px',
+                            padding: '8px',
+                            backgroundColor: 'rgba(33, 150, 243, 0.1)',
+                            borderRadius: '4px'
+                        }}>
+                            <div className="loading-spinner"></div>
+                            <span style={{ fontWeight: 'bold', color: '#2196f3' }}>
+                                Fixing command errors...   
+                                <button 
+                                    onClick={() => changeTab('errors')}
+                                    style={{
+                                        background: 'none',
+                                        border: 'none',
+                                        color: '#2196f3',
+                                        textDecoration: 'underline',
+                                        cursor: 'pointer',
+                                        padding: 0,
+                                        fontSize: 'inherit',
+                                        fontWeight: 'bold',
+                                        marginLeft: '8px'
+                                    }}
+                                >
+                                    View Errors
+                                </button>
+                            </span>
+                        </div>
+                        
+                        <MessageContent 
+                            text={msg.text} 
+                            onCodeChange={(newText) => updateMessage(index, newText)}
+                        />
+                    </div>
+                </div>
+            );
+        }
+        
+        return (
+            <div className={`message ${msg.role}`}>
+                <div className="message-content" style={{
+                    ...(msg.role === 'user' ? {
+                        backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                        color: '#000000',
+                        marginLeft: 'auto',
+                        maxWidth: '100%',
+                        border: 'none',
+                        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)'
+                    } : {
+                        backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                        color: '#212529',
+                        marginRight: 'auto',
+                        maxWidth: '100%',
+                        border: 'none',
+                        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)'
+                    })
+                }}>
+                    {msg.isRegenerated && (
+                        <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            backgroundColor: '#e8f5e9',
+                            padding: '4px 8px',
+                            borderRadius: '4px',
+                            marginBottom: '8px',
+                            fontSize: '13px',
+                            color: '#2e7d32',
+                            fontWeight: 'bold'
+                        }}>
+                            <span>✓ Regenerated Command</span>
+                            <button 
+                                onClick={() => changeTab('errors')}
+                                style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    color: '#2e7d32',
+                                    textDecoration: 'underline',
+                                    cursor: 'pointer',
+                                    marginLeft: '8px',
+                                    padding: 0,
+                                    fontSize: 'inherit'
+                                }}
+                            >
+                                View Error History
+                            </button>
+                        </div>
+                    )}
+                    
+                    <MessageContent 
+                        text={msg.text} 
+                        onCodeChange={(newText) => updateMessage(index, newText)}
+                    />
+                </div>
+            </div>
+        );
+    };
+
     return (
         <div style={{ display: 'flex', gap: '20px'}}>
             {/* 메인 GeoGebra 컴포넌트 */}
@@ -772,208 +877,123 @@ function Chat() {
                         maxHeight: 'calc(100vh - 390px)',
                         position: 'relative'
                     }}>
-                        {/* 메시지 표시 - 에러 블록 표시 제거 */}
-                    {messages.map((msg, index) => (
-                        <React.Fragment key={index}>
-                                {/* 피드백 메시지인 경우 특별한 UI 적용 */}
-                                {msg.isFeedback ? (
-                                    <div className={`message ${msg.role}`} style={{
-                                        marginBottom: '10px'
-                                    }}>
-                                        <div className="message-content" style={{ position: 'relative' }}>
-                                            {/* 로딩 상태 표시 */}
-                                            <div style={{
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                marginBottom: '10px',
-                                                padding: '8px',
-                                                backgroundColor: 'rgba(33, 150, 243, 0.1)',
-                                                borderRadius: '4px'
-                                            }}>
-                                                <div className="loading-spinner"></div>
-                                                <span style={{ 
-                                                    fontWeight: 'bold', 
-                                                    color: '#2196f3'
-                                                }}>
-                                                    Fixing command errors...   
-                                                    <button 
-                                                        onClick={() => changeTab('errors')}
-                                                        style={{
-                                                            background: 'none',
-                                                            border: 'none',
-                                                            color: '#2196f3',
-                                                            textDecoration: 'underline',
-                                                            cursor: 'pointer',
-                                                            padding: 0,
-                                                            fontSize: 'inherit',
-                                                            fontWeight: 'bold',
-                                                            marginLeft: '8px'  // 여기에 간격 추가
-                                                        }}
-                                                    >
-                                                        View Errors
-                                                    </button>
-                                                </span>
-                                            </div>
-                                            
-                                            <MessageContent 
-                                                text={msg.text} 
-                                                onCodeChange={(newText) => {
-                                                    updateMessage(index, newText);
-                                                }}
-                                            />
-                                        </div>
-                                    </div>
-                                ) : (
-                                    /* 일반 메시지 - 에러 블록 표시 제거 */
-                            <div className={`message ${msg.role}`}>
-                                        <div className="message-content" style={{
-                                            // 메시지 타입에 따른 스타일 적용
-                                            ...(msg.role === 'user' ? {
-                                                backgroundColor: 'rgba(255, 255, 255, 0.9)',
-                                                color: '#000000',
-                                                marginLeft: 'auto',
-                                                maxWidth: '100%',
-                                                border: 'none',
-                                                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)'
-                                            } : {
-                                                backgroundColor: 'rgba(255, 255, 255, 0.95)',
-                                                color: '#212529',
-                                                marginRight: 'auto',
-                                                maxWidth: '100%',
-                                                border: 'none',
-                                                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)'
-                                            })
-                                        }}>
-                                            {/* 재생성된 메시지인 경우 "오류 수정됨" 배지 표시 */}
-                                    {msg.isRegenerated && (
-                                        <div style={{
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                            backgroundColor: '#e8f5e9',
-                                                    padding: '4px 8px',
-                                            borderRadius: '4px',
-                                            marginBottom: '8px',
-                                            fontSize: '13px',
-                                            color: '#2e7d32',
-                                            fontWeight: 'bold'
-                                        }}>
-                                                    <span>✓ Regenerated Command</span>
-                                                    <button 
-                                                        onClick={() => {
-                                                            changeTab('errors');
-                                                        }}
-                                                        style={{
-                                                            background: 'none',
-                                                            border: 'none',
-                                                            color: '#2e7d32',
-                                                            textDecoration: 'underline',
-                                                            cursor: 'pointer',
-                                                            marginLeft: '8px',
-                                                            padding: 0,
-                                                            fontSize: 'inherit'
-                                                        }}
-                                                    >
-                                                        View Error History
-                                                    </button>
-                                        </div>
-                                    )}
-                                    
-                                <MessageContent 
-                                    text={msg.text} 
-                                    onCodeChange={(newText) => {
-                                        updateMessage(index, newText);
-                                    }}
+                        {messages.map((msg, index) => (
+                            <React.Fragment key={index}>
+                                <MessageItem 
+                                    msg={msg} 
+                                    index={index} 
+                                    updateMessage={updateMessage} 
+                                    changeTab={changeTab}
                                 />
-                            </div>
-                        </div>
-                                )}
                             </React.Fragment>
                         ))}
                         
                         {/* 로딩 표시 */}
                         {isLoading && (
-                            <div className="message assistant" style={{
-                                padding: '0',
-                                backgroundColor: 'transparent'
-                            }}>
+                            <div className="message assistant">
                                 <div className="message-content" style={{
-                                    backgroundColor: '#f8f9fa',
-                                    border: '1px solid #e9ecef',
-                                    borderRadius: '12px',
+                                    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                                    color: '#212529',
+                                    marginRight: 'auto',
+                                    maxWidth: '100%',
+                                    border: 'none',
+                                    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+                                    overflow: 'hidden',
+                                    position: 'relative',
                                     padding: '16px',
-                                    boxShadow: '0 2px 10px rgba(0,0,0,0.05)',
-                                    overflow: 'hidden'
+                                    borderRadius: '12px'
                                 }}>
                                     <div style={{
                                         display: 'flex',
                                         flexDirection: 'column',
                                         alignItems: 'center',
                                         justifyContent: 'center',
-                                        padding: '8px'
+                                        padding: '12px',
+                                        background: 'transparent',
+                                        position: 'relative',
+                                        overflow: 'hidden'
                                     }}>
-                                        {/* 애니메이션 로딩 인디케이터 */}
+                                        {/* 배경 애니메이션
+                                        <div style={{
+                                            position: 'absolute',
+                                            top: '-50%',
+                                            left: '-50%',
+                                            width: '200%',
+                                            height: '200%',
+                                            background: `conic-gradient(
+                                                transparent 20%, 
+                                                rgba(99, 102, 241, 0.1) 40%,
+                                                transparent 60%
+                                            )`,
+                                            animation: 'rotate 3s linear infinite'
+                                        }}></div> */}
+
+                                        {/* 웨이브 애니메이션 로딩 인디케이터 */}
                                         <div style={{
                                             display: 'flex',
                                             justifyContent: 'center',
-                                            marginBottom: '16px'
+                                            marginBottom: '24px',
+                                            position: 'relative',
+                                            height: '40px'
                                         }}>
-                                            <div style={{
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center'
-                                            }}>
-                                                {[...Array(3)].map((_, i) => (
-                                                    <div key={i} style={{
-                                                        width: '12px',
-                                                        height: '12px',
-                                                        backgroundColor: '#6366f1',
-                                                        borderRadius: '50%',
-                                                        margin: '0 4px',
-                                                        animation: 'bounce 1.4s infinite',
-                                                        animationDelay: `${i * 0.16}s`,
-                                                        animationTimingFunction: 'ease-in-out',
-                                                        transform: 'scale(0)'  /* 초기 상태 설정 */
-                                                    }}></div>
-                                                ))}
-                                            </div>
+                                            {[...Array(3)].map((_, i) => (
+                                                <div key={i} style={{
+                                                    width: '8px',
+                                                    height: '40px',
+                                                    backgroundColor: '#6366f1',
+                                                    margin: '0 3px',
+                                                    borderRadius: '4px',
+                                                    animation: `wave 1.2s ease-in-out infinite`,
+                                                    animationDelay: `${i * 0.15}s`,
+                                                    transformOrigin: 'bottom'
+                                                }}></div>
+                                            ))}
                                         </div>
-                                        
-                                        {/* 로딩 메시지 */}
+
+                                        {/* 그라데이션 텍스트 애니메이션 */}
                                         <div style={{
                                             fontSize: '15px',
-                                            fontWeight: '500',
-                                            color: '#4f46e5',
-                                            textAlign: 'center',
-                                            marginBottom: '8px'
+                                            fontWeight: '600',
+                                            marginBottom: '8px',
+                                            background: 'linear-gradient(45deg, #4f46e5, #3b82f6, #6366f1)',
+                                            backgroundSize: '300% 300%',
+                                            WebkitBackgroundClip: 'text',
+                                            WebkitTextFillColor: 'transparent',
+                                            animation: 'gradient-text 3s ease infinite'
                                         }}>
-                                            Generating GeoGebra commands...
+                                            Generating GeoGebra Commands
                                         </div>
-                                        
-                                        {/* 부가 텍스트 */}
-                                        <div style={{
-                                            fontSize: '13px',
-                                            color: '#6b7280',
-                                            textAlign: 'center'
-                                        }}>
-                                            Finding the optimal geometric representation...
-                                        </div>
-                                        
-                                        {/* 프로그레스 바 */}
-                                        <div style={{
-                                            width: '100%',
-                                            height: '4px',
-                                            backgroundColor: '#e5e7eb',
-                                            borderRadius: '2px',
-                                            marginTop: '16px',
-                                            overflow: 'hidden',
-                                            position: 'relative'
-                                        }}>
-                                            <div className="progress-bar-animated"></div>
-                                        </div>
-                                    </div>
+
+                                        {/* 원형 프로그레스 바 */}
+                                        <svg width="60" height="60" style={{ margin: '16px 0', transformOrigin: 'center' }}>
+                                            <circle 
+                                                cx="30" 
+                                                cy="30" 
+                                                r="24" 
+                                                stroke="#e5e7eb" 
+                                                strokeWidth="4" 
+                                                fill="none"
+                                            />
+                                            <circle 
+                                                cx="30" 
+                                                cy="30" 
+                                                r="24" 
+                                                stroke="#4f46e5" 
+                                                strokeWidth="4" 
+                                                fill="none"
+                                                strokeLinecap="round"
+                                                strokeDasharray="150.8"
+                                                strokeDashoffset="150.8"
+                                                style={{
+                                                    animation: 'circular-progress 2s linear infinite',
+                                                    transformOrigin: 'center'
+                                                }}
+                                            />
+                                        </svg>
                                     </div>
                                 </div>
-                            )}
+                            </div>
+                        )}
                         
                         <div ref={messagesEndRef} style={{ overflow: 'hidden' }} />
                     </div>

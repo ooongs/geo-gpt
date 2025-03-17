@@ -42,7 +42,7 @@ export const validateCommand = async (command, setErrorMessage, ws) => {
       errorPromise.then(error => {
         const result = { 
           valid: !error && success, 
-          error: error || (success ? '' : '명령어 실행이 실패했습니다.')
+          error: error || (success ? '' : 'Failed to execute the GeoGebra command.')
         };
         
         // 결과 로깅

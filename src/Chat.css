@@ -76,8 +76,8 @@
     width: 20px;
     height: 20px;
     border-radius: 50%;
-    background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
-    z-index: -1;
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+    z-index: 0;
 }
 
 .input-container {
