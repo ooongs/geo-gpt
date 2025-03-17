@@ -333,8 +333,8 @@ function Chat() {
                 // WebSocket 연결이 없는 경우 기존 방식으로 처리
                 const feedbackMessages = [...originalMessages, {
                     role: 'user',
-                    content: `다음 명령어 실행 중 오류가 발생했습니다. 수정된 명령어를 제공해주세요:\n\n${
-                        errorDetails.map(err => `명령어: ${err.command}\n오류: ${err.error}`).join('\n\n')
+                    content: `Error occurred during command execution. Please provide the corrected command:\n\n${
+                        errorDetails.map(err => `Command: ${err.command}\nError: ${err.error}`).join('\n\n')
                     }`
                 }];
                 console.log('No WebSocket:', feedbackMessages);
@@ -431,7 +431,7 @@ function Chat() {
                         // 첫 번째 시도에서만 오류 블록 추가
                         if (retryCount === 0) {
                             errorBlockId = addErrorBlock(
-                                errors.map(err => `명령어: ${err.command}\n오류: ${err.error}`).join('\n\n'),
+                                errors.map(err => `Command: ${err.command}\nError: ${err.error}`).join('\n\n'),
                                 responseToUpdate
                             );
                             
