@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './Chat.css';
+import './animations.css';
 import Geogebra from 'react-geogebra';
 import 'katex/dist/katex.min.css';
 import MessageContent from './components/MessageContent';
@@ -10,9 +11,16 @@ import ErrorInfoBlock from './components/ErrorInfoBlock';
 
 // 서비스 및 유틸리티 가져오기
 import { generateCommands, searchCommands as searchCommandsApi } from './services/api';
-import { connectWebSocket, sendCommandResult, sendQuery } from './services/websocket';
+import { connectWebSocket, sendCommandResult } from './services/websocket';
 import { validateCommand, executeCommand, resetApp, extractCommands } from './services/geogebra';
 import { setupErrorObserver } from './utils/errorHandling';
+
+// 피드백 서비스 가져오기
+import { getCommandFeedback, validateAndExecuteCommands, executeValidatedCommands, 
+         resetFeedbackState, MAX_FEEDBACK_RETRY } from './services/feedback';
+
+// 상수 가져오기
+import { SUGGESTED_QUERIES, MODEL_OPTIONS } from './constants';
 
 function Chat() {
     // 상태 관리
@@ -21,15 +29,7 @@ function Chat() {
     const [isLoading, setIsLoading] = useState(false);
     const [searchResults, setSearchResults] = useState([]);
     const [isSearching, setIsSearching] = useState(false);
-    const [suggestedQueries, setSuggestedQueries] = useState([
-        "请画出边长为5的正三角形 ",
-        "请画出过(0,0)、(1,2)、(2,2)的圆",
-        "请画出边长为2的正方形",
-        "请画出圆心为(0,0)、半径为2的圆",
-        "请画出正四面体",
-        "请画出正方体",
-        "请画出正八面体",
-    ]);
+    const [suggestedQueries, setSuggestedQueries] = useState(SUGGESTED_QUERIES);
     const [selectedModel, setSelectedModel] = useState('gpt-4o-mini');
     const [errorMessage, setErrorMessage] = useState(null);
     const [feedbackInProgress, setFeedbackInProgress] = useState(false);
@@ -37,7 +37,6 @@ function Chat() {
     const [ws, setWs] = useState(null);
     const [feedbackRetryCount, setFeedbackRetryCount] = useState(0);
     const [feedbackMessages, setFeedbackMessages] = useState([]);
-    const MAX_FEEDBACK_RETRY = 3; // 최대 재시도 횟수
     const [detectedError, setDetectedError] = useState(null);
     const [currentResponse, setCurrentResponse] = useState('');
     const [errorBlocks, setErrorBlocks] = useState([]); // 오류 블록 목록 저장
@@ -46,12 +45,6 @@ function Chat() {
     
     // 참조 객체
     const messagesEndRef = useRef(null);
-
-    // 모델 옵션 정의
-    const modelOptions = [
-        { id: 'gpt-4o-mini', name: 'ChatGPT (GPT-4o-mini)' },
-        { id: 'deepseek-chat', name: 'DeepSeek Chat' }
-    ];
 
     // 스크롤 관련 함수
     const scrollToBottom = () => {
@@ -305,55 +298,15 @@ function Chat() {
         setIsSearching(false);
     };
     
-    // 오류 피드백을 위한 서버 요청 함수 개선
-    const getCommandFeedback = async (originalMessages, responseText, errorDetails, retryCount = 0) => {
-        try {
-            const userQuery = [...originalMessages].reverse().find(msg => msg.role === 'user')?.content || '';
-            const MAX_RETRY = 3; // 최대 재시도 횟수
-
-            // 재시도 횟수 초과 확인
-            if (retryCount >= MAX_RETRY) {
-                return `GeoGebra 명령어 수정 시도 횟수(${MAX_RETRY}회)를 초과했습니다. 다른 방식으로 질문해 보세요.`;
-            }
-
-            // WebSocket이 연결되어 있는지 확인
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                // 먼저 사용자 쿼리 전송
-                sendQuery(ws, userQuery);
-                
-                // 각 오류 명령어에 대해 전체 응답 재생성 요청
-                console.log('responseText:', responseText);
-                for (const err of errorDetails) {
-                    sendCommandResult(ws, err.command, responseText, false, err.error, true);
-                }
-                
-                // 백엔드에서 자동으로 수정하므로 여기서는 빈 문자열 반환
-                return '';
-            } else {
-                // WebSocket 연결이 없는 경우 기존 방식으로 처리
-                const feedbackMessages = [...originalMessages, {
-                    role: 'user',
-                    content: `Error occurred during command execution. Please provide the corrected command:\n\n${
-                        errorDetails.map(err => `Command: ${err.command}\nError: ${err.error}`).join('\n\n')
-                    }`
-                }];
-                console.log('No WebSocket:', feedbackMessages);
-                const response = await generateCommands(selectedModel, feedbackMessages);
-                return response.content;
-            }
-        } catch (error) {
-            console.error('피드백 요청 오류:', error);
-            return '명령어 수정 중 오류가 발생했습니다: ' + error.message;
-        }
-    };
-
     // 상태 초기화 함수
-    const resetFeedbackState = () => {
-        setFeedbackMessages([]);
-        setFeedbackInProgress(false);
-        setCommandErrors([]);
-        setErrorMessage(null);
-        setDetectedError(null);
+    const resetAllFeedbackState = () => {
+        resetFeedbackState({
+            setFeedbackMessages,
+            setFeedbackInProgress,
+            setCommandErrors,
+            setErrorMessage,
+            setDetectedError
+        });
     };
 
     // 메시지 전송 함수 개선
@@ -361,7 +314,7 @@ function Chat() {
         if (!input.trim() || isLoading) return;
 
         // 상태 초기화
-        resetFeedbackState();
+        resetAllFeedbackState();
         setDetectedError(null);
 
         const userMessage = { role: 'user', text: input };
@@ -398,36 +351,26 @@ function Chat() {
             const commandLines = extractCommands(responseText);
             
             if (commandLines.length > 0) {
-                // 명령어 검증 및 실행 함수 (재귀적으로 호출 가능)
-                const validateAndExecuteCommands = async (commandsToValidate, responseToUpdate, retryCount = 0) => {
-                // 모든 명령어 검증
-                let hasErrors = false;
-                const errors = [];
-                    let errorBlockId = null;
+                // 명령어 검증 및 실행 처리
+                const processCommands = async (commandsToValidate, responseToUpdate, retryCount = 0) => {
+                    // 명령어 검증
+                    const validationResult = await validateAndExecuteCommands(
+                        commandsToValidate, 
+                        responseToUpdate, 
+                        setFeedbackInProgress,
+                        { setErrorMessage },
+                        ws,
+                        retryCount
+                    );
                     
-                    console.log("명령어 검증 시작, retryCount:", retryCount);
+                    const { hasErrors, errors } = validationResult;
+                    let errorBlockId = validationResult.errorBlockId;
                     
-                    // 로딩 상태 설정 - 검증 시작 시
-                    setFeedbackInProgress(true);
-                    
-                    for (const command of commandsToValidate) {
-                    if (!command.trim()) continue;
-                    // 명령어 검증 (testApp에서 실행)
-                        const result = await validateCommand(command, setErrorMessage, ws);
-                    if (!result.valid) {
-                        hasErrors = true;
-                        errors.push({
-                            command: command,
-                            error: result.error
-                        });
-                    }
-                }
-                
-                if (hasErrors) {
-                    // 오류가 있는 경우 피드백 요청
+                    if (hasErrors) {
+                        // 오류가 있는 경우 피드백 요청
                         console.log(`명령어 오류 발견 (시도 ${retryCount + 1}):`, errors);
-                    setCommandErrors(errors);
-                    
+                        setCommandErrors(errors);
+                        
                         // 첫 번째 시도에서만 오류 블록 추가
                         if (retryCount === 0) {
                             errorBlockId = addErrorBlock(
@@ -460,9 +403,9 @@ function Chat() {
                         await new Promise(resolve => setTimeout(resolve, 100));
                         
                         try {
-                    // 피드백 요청
-                            const updatedResponse = await getCommandFeedback(apiMessages, responseText, errors, retryCount);
-                    
+                            // 피드백 요청
+                            const updatedResponse = await getCommandFeedback(apiMessages, responseText, errors, ws, retryCount);
+                            
                             // 수정된 응답이 있는 경우 마지막 메시지만 업데이트 (새 메시지 추가 대신)
                             if (updatedResponse) {
                                 // 변경된 방식: 마지막 assistant 메시지만 업데이트
@@ -487,22 +430,22 @@ function Chat() {
                                     return newMessages;
                                 });
                             }
-                    
-                    // 수정된 명령어 추출 및 실행
+                            
+                            // 수정된 명령어 추출 및 실행
                             const newCommandLines = extractCommands(updatedResponse);
                             if (newCommandLines.length > 0) {
-                        // 메인 앱 초기화
+                                // 메인 앱 초기화
                                 resetApp();
                                 
                                 // 재귀적으로 검증 및 실행 (최대 재시도 횟수 제한)
                                 if (retryCount < 3) {
-                                    await validateAndExecuteCommands(newCommandLines, updatedResponse, retryCount + 1);
+                                    await processCommands(newCommandLines, updatedResponse, retryCount + 1);
                                 } else {
                                     console.log('최대 재시도 횟수 도달');
                                     // 마지막 시도에서도 실패한 경우, 성공한 명령어만 실행
-                        for (const command of newCommandLines) {
-                            if (!command.trim()) continue;
-                            
+                                    for (const command of newCommandLines) {
+                                        if (!command.trim()) continue;
+                                        
                                         const result = await validateCommand(command, setErrorMessage, ws);
                                         if (result.valid) {
                                             executeCommand(command);
@@ -519,9 +462,9 @@ function Chat() {
                             console.error("피드백 처리 중 오류 발생:", error);
                             // 오류 발생 시에도 피드백 진행 상태 종료
                             setFeedbackInProgress(false);
-                    }
-                } else {
-                    // 오류가 없는 경우 바로 실행
+                        }
+                    } else {
+                        // 오류가 없는 경우 바로 실행
                         if (retryCount === 0) {
                             // 첫 번째 시도에서 성공한 경우 메시지 추가
                             setMessages(prevMessages => {
@@ -531,32 +474,25 @@ function Chat() {
                                 
                                 // 유저 메시지가 있으면 그대로 두고 응답 추가
                                 return [...prevMessages, {
-                                role: 'assistant',
-                                text: responseToUpdate,
-                                errorBlockId: null
-                            }];
+                                    role: 'assistant',
+                                    text: responseToUpdate,
+                                    errorBlockId: null
+                                }];
                             });
                         } else {
                             // 재시도에서 성공한 경우 - 재생성된 메시지로 표시
                             setMessages(prevMessages => {
                                 return [...prevMessages, {
-                        role: 'assistant',
-                                text: responseToUpdate,
-                                isRegenerated: true,
-                                errorBlockId: null
-                            }];
+                                    role: 'assistant',
+                                    text: responseToUpdate,
+                                    isRegenerated: true,
+                                    errorBlockId: null
+                                }];
                             });
                         }
                         
-                        // 메인 앱 초기화 (재시도 시에는 이미 초기화되어 있음)
-                        if (retryCount === 0) resetApp();
-                    
-                    // 검증된 명령어 모두 실행
-                        for (const command of commandsToValidate) {
-                            if (command.trim()) {
-                                executeCommand(command);
-                            }
-                        }
+                        // 명령어 실행
+                        executeValidatedCommands(commandsToValidate);
                         
                         // 피드백 메시지 초기화
                         setFeedbackMessages([]);
@@ -567,10 +503,8 @@ function Chat() {
                 };
                 
                 // 명령어 검증 및 실행 시작
-                await validateAndExecuteCommands(commandLines, responseText);
+                await processCommands(commandLines, responseText);
                 
-                // 성공 시 피드백 메시지 초기화
-                setFeedbackMessages([]);
             } else {
                 // 명령어가 없는 경우 메시지만 추가
                 const updatedMessages = [...messages, {
@@ -754,7 +688,7 @@ function Chat() {
                     <ModelSelector 
                         selectedModel={selectedModel}
                         setSelectedModel={setSelectedModel}
-                        modelOptions={modelOptions}
+                        modelOptions={MODEL_OPTIONS}
                     />
                     <button
                         onClick={saveChat}
@@ -856,20 +790,12 @@ function Chat() {
                                                 backgroundColor: 'rgba(33, 150, 243, 0.1)',
                                                 borderRadius: '4px'
                                             }}>
-                                                <div className="loading-spinner" style={{
-                                                    width: '20px',
-                                                    height: '20px',
-                                                    border: '3px solid #f3f3f3',
-                                                    borderTop: '3px solid #2196f3',
-                                                    borderRadius: '50%',
-                                                    marginRight: '10px',
-                                                    animation: 'spin 1s linear infinite'
-                                                }}></div>
+                                                <div className="loading-spinner"></div>
                                                 <span style={{ 
                                                     fontWeight: 'bold', 
                                                     color: '#2196f3'
                                                 }}>
-                                                    Fixing command errors... 
+                                                    Fixing command errors...   
                                                     <button 
                                                         onClick={() => changeTab('errors')}
                                                         style={{
@@ -990,7 +916,7 @@ function Chat() {
                                             justifyContent: 'center',
                                             marginBottom: '16px'
                                         }}>
-                                            <div className="loading-dots" style={{
+                                            <div style={{
                                                 display: 'flex',
                                                 alignItems: 'center',
                                                 justifyContent: 'center'
@@ -1002,8 +928,10 @@ function Chat() {
                                                         backgroundColor: '#6366f1',
                                                         borderRadius: '50%',
                                                         margin: '0 4px',
-                                                        animation: 'bounce 1.4s infinite ease-in-out',
-                                                        animationDelay: `${i * 0.16}s`
+                                                        animation: 'bounce 1.4s infinite',
+                                                        animationDelay: `${i * 0.16}s`,
+                                                        animationTimingFunction: 'ease-in-out',
+                                                        transform: 'scale(0)'  /* 초기 상태 설정 */
                                                     }}></div>
                                                 ))}
                                             </div>
@@ -1039,16 +967,7 @@ function Chat() {
                                             overflow: 'hidden',
                                             position: 'relative'
                                         }}>
-                                            <div className="progress-bar-animation" style={{
-                                                position: 'absolute',
-                                                top: '0',
-                                                left: '0',
-                                                height: '100%',
-                                                width: '30%',
-                                                backgroundColor: '#4f46e5',
-                                                borderRadius: '2px',
-                                                animation: 'progress-bar 2s infinite ease-in-out'
-                                            }}></div>
+                                            <div className="progress-bar-animated"></div>
                                         </div>
                                     </div>
                                     </div>
@@ -1260,20 +1179,3 @@ function Chat() {
 }
 
 export default Chat; 
-
-<style jsx>{`
-    @keyframes spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
-    }
-    
-    @keyframes bounce {
-        0%, 80%, 100% { transform: scale(0); opacity: 0.5; }
-        40% { transform: scale(1); opacity: 1; }
-    }
-    
-    @keyframes progress-bar {
-        0% { left: -30%; }
-        100% { left: 100%; }
-    }
-`}</style> 
