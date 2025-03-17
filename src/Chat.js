@@ -41,6 +41,8 @@ function Chat() {
     const [detectedError, setDetectedError] = useState(null);
     const [currentResponse, setCurrentResponse] = useState('');
     const [errorBlocks, setErrorBlocks] = useState([]); // 오류 블록 목록 저장
+    const [activeTab, setActiveTab] = useState('chat'); // 'chat' 또는 'errors'
+    const [unreadErrors, setUnreadErrors] = useState(0); // 읽지 않은 오류 수
     
     // 참조 객체
     const messagesEndRef = useRef(null);
@@ -659,7 +661,9 @@ function Chat() {
             id: Date.now(),
             errorMessage,
             originalResponse,
-            isResolved: false
+            isResolved: false,
+            timestamp: new Date(),
+            read: false // 읽음 상태 추적
         };
         
         setErrorBlocks(prev => [...prev, newErrorBlock]);
@@ -667,28 +671,25 @@ function Chat() {
         // 현재 메시지 상태 로깅
         console.log("에러 블록 추가 시 메시지 상태:", messages);
         
+        // 현재 탭이 errors가 아닌 경우 미읽음 카운트 증가
+        if (activeTab !== 'errors') {
+            setUnreadErrors(prev => prev + 1);
+        }
+        
         return newErrorBlock.id;
     };
 
-    // 마지막 메시지에 에러 블록 ID 연결 함수 추가
-    const attachErrorBlockToLastMessage = (errorBlockId) => {
-        setMessages(prev => {
-            const newMessages = [...prev];
-            // 마지막 assistant 메시지 찾기
-            let lastAssistantIndex = newMessages.length - 1;
-            while (lastAssistantIndex >= 0 && newMessages[lastAssistantIndex].role !== 'assistant') {
-                lastAssistantIndex--;
-            }
-            
-            if (lastAssistantIndex >= 0) {
-                newMessages[lastAssistantIndex] = {
-                    ...newMessages[lastAssistantIndex],
-                    errorBlockId
-                };
-            }
-            
-            return newMessages;
-        });
+    // 탭 변경 함수
+    const changeTab = (tab) => {
+        setActiveTab(tab);
+        
+        // 'errors' 탭으로 이동 시 모든 오류를 읽음 상태로 표시
+        if (tab === 'errors') {
+            setUnreadErrors(0);
+            setErrorBlocks(prev => 
+                prev.map(block => ({...block, read: true}))
+            );
+        }
     };
 
     // 오류 블록 제거 함수
@@ -769,54 +770,115 @@ function Chat() {
                     </button>
                 </div>
                 
-                {/* 메시지 표시 영역 */}
-                <div className="messages" style={{ flex: 1, overflowY: 'auto', maxHeight: 'calc(100vh - 350px)' }}>
-                    {/* 메시지와 오류 블록을 함께 표시 */}
-                    {messages.map((msg, index) => (
-                        <React.Fragment key={index}>
-                            {/* 피드백 메시지인 경우 특별한 UI 적용 */}
-                            {msg.isFeedback ? (
-                                <div className={`message ${msg.role}`} style={{
-                                    borderLeft: '4px solid #2196f3',
-                                    backgroundColor: '#e3f2fd',
-                                    marginBottom: '10px'
-                                }}>
-                                    <div className="message-content" style={{ position: 'relative' }}>
-                                        {/* 로딩 상태 표시 */}
-                                        <div style={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            marginBottom: '10px',
-                                            padding: '8px',
-                                            backgroundColor: 'rgba(33, 150, 243, 0.1)',
-                                            borderRadius: '4px'
-                                        }}>
-                                            <div className="loading-spinner" style={{
-                                                width: '20px',
-                                                height: '20px',
-                                                border: '3px solid #f3f3f3',
-                                                borderTop: '3px solid #2196f3',
-                                                borderRadius: '50%',
-                                                marginRight: '10px',
-                                                animation: 'spin 1s linear infinite'
-                                            }}></div>
-                                            <span style={{ 
-                                                fontWeight: 'bold', 
-                                                color: '#2196f3'
+                {/* 탭 인터페이스 */}
+                <div style={{ 
+                    display: 'flex', 
+                    borderBottom: '1px solid #e9ecef',
+                    marginBottom: '10px'
+                }}>
+                    <div 
+                        onClick={() => changeTab('chat')}
+                        style={{
+                            padding: '8px 16px',
+                            cursor: 'pointer',
+                            borderBottom: activeTab === 'chat' ? '3px solid #4f46e5' : '3px solid transparent',
+                            color: activeTab === 'chat' ? '#4f46e5' : '#6b7280',
+                            fontWeight: activeTab === 'chat' ? '600' : '400',
+                            transition: 'all 0.2s ease'
+                        }}
+                    >
+                        대화
+                    </div>
+                    <div 
+                        onClick={() => changeTab('errors')}
+                        style={{
+                            padding: '8px 16px',
+                            cursor: 'pointer',
+                            borderBottom: activeTab === 'errors' ? '3px solid #ef4444' : '3px solid transparent',
+                            color: activeTab === 'errors' ? '#ef4444' : '#6b7280',
+                            fontWeight: activeTab === 'errors' ? '600' : '400',
+                            position: 'relative',
+                            transition: 'all 0.2s ease'
+                        }}
+                    >
+                        오류 로그
+                        {unreadErrors > 0 && (
+                            <span style={{
+                                position: 'absolute',
+                                top: '2px',
+                                right: '2px',
+                                backgroundColor: '#ef4444',
+                                color: 'white',
+                                borderRadius: '50%',
+                                width: '20px',
+                                height: '20px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontSize: '12px',
+                                fontWeight: 'bold'
+                            }}>
+                                {unreadErrors}
+                            </span>
+                        )}
+                    </div>
+                </div>
+                
+                {/* 채팅 탭 컨텐츠 */}
+                {activeTab === 'chat' && (
+                    <div className="messages" style={{ flex: 1, overflowY: 'auto', maxHeight: 'calc(100vh - 390px)' }}>
+                        {/* 메시지 표시 - 에러 블록 표시 제거 */}
+                        {messages.map((msg, index) => (
+                            <React.Fragment key={index}>
+                                {/* 피드백 메시지인 경우 특별한 UI 적용 */}
+                                {msg.isFeedback ? (
+                                    <div className={`message ${msg.role}`} style={{
+                                        borderLeft: '4px solid #2196f3',
+                                        backgroundColor: '#e3f2fd',
+                                        marginBottom: '10px'
+                                    }}>
+                                        <div className="message-content" style={{ position: 'relative' }}>
+                                            {/* 로딩 상태 표시 */}
+                                            <div style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                marginBottom: '10px',
+                                                padding: '8px',
+                                                backgroundColor: 'rgba(33, 150, 243, 0.1)',
+                                                borderRadius: '4px'
                                             }}>
-                                                명령어 오류 수정 중... 새로운 명령어를 생성합니다
-                                            </span>
-                                        </div>
-                                        
-                                        {/* 에러 메시지 내용 */}
-                                        <div style={{
-                                            backgroundColor: '#ffebee',
-                                            padding: '12px',
-                                            borderRadius: '4px',
-                                            marginBottom: '10px',
-                                            borderLeft: '4px solid #f44336'
-                                        }}>
-                                            <h4 style={{ margin: '0 0 8px 0', color: '#d32f2f' }}>명령어 오류 발생</h4>
+                                                <div className="loading-spinner" style={{
+                                                    width: '20px',
+                                                    height: '20px',
+                                                    border: '3px solid #f3f3f3',
+                                                    borderTop: '3px solid #2196f3',
+                                                    borderRadius: '50%',
+                                                    marginRight: '10px',
+                                                    animation: 'spin 1s linear infinite'
+                                                }}></div>
+                                                <span style={{ 
+                                                    fontWeight: 'bold', 
+                                                    color: '#2196f3'
+                                                }}>
+                                                    명령어 오류 수정 중... 
+                                                    <button 
+                                                        onClick={() => changeTab('errors')}
+                                                        style={{
+                                                            background: 'none',
+                                                            border: 'none',
+                                                            color: '#2196f3',
+                                                            textDecoration: 'underline',
+                                                            cursor: 'pointer',
+                                                            padding: 0,
+                                                            fontSize: 'inherit',
+                                                            fontWeight: 'bold'
+                                                        }}
+                                                    >
+                                                        오류 보기
+                                                    </button>
+                                                </span>
+                                            </div>
+                                            
                                             <MessageContent 
                                                 text={msg.text} 
                                                 onCodeChange={(newText) => {
@@ -824,213 +886,307 @@ function Chat() {
                                                 }}
                                             />
                                         </div>
-                                        
-                                        {/* 진행 상태 표시 (선택적) */}
-                                        <div style={{
-                                            backgroundColor: 'rgba(0,0,0,0.05)',
-                                            padding: '8px 12px',
-                                            borderRadius: '4px',
-                                            fontSize: '13px',
-                                            display: 'flex',
-                                            justifyContent: 'space-between'
+                                    </div>
+                                ) : (
+                                    /* 일반 메시지 - 에러 블록 표시 제거 */
+                                    <div className={`message ${msg.role}`}>
+                                        <div className="message-content" style={{
+                                            // 메시지 타입에 따른 스타일 적용
+                                            ...(msg.role === 'user' ? {
+                                                backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                                                color: '#000000',
+                                                marginLeft: 'auto',
+                                                maxWidth: '100%',
+                                                border: 'none',
+                                                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)'
+                                            } : {
+                                                backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                                                color: '#212529',
+                                                marginRight: 'auto',
+                                                maxWidth: '100%',
+                                                border: 'none',
+                                                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)'
+                                            })
                                         }}>
-                                            <span>피드백 처리 중...</span>
-                                            <span>잠시만 기다려주세요</span>
+                                            {/* 재생성된 메시지인 경우 "오류 수정됨" 배지 표시 */}
+                                            {msg.isRegenerated && (
+                                                <div style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    backgroundColor: '#e8f5e9',
+                                                    padding: '4px 8px',
+                                                    borderRadius: '4px',
+                                                    marginBottom: '8px',
+                                                    fontSize: '13px',
+                                                    color: '#2e7d32',
+                                                    fontWeight: 'bold'
+                                                }}>
+                                                    <span>✓ 재생성된 명령어</span>
+                                                    {msg.errorBlockId && (
+                                                        <button 
+                                                            onClick={() => {
+                                                                changeTab('errors');
+                                                                // 강조 표시를 위한 로직 추가 가능
+                                                            }}
+                                                            style={{
+                                                                background: 'none',
+                                                                border: 'none',
+                                                                color: '#2e7d32',
+                                                                textDecoration: 'underline',
+                                                                cursor: 'pointer',
+                                                                marginLeft: '8px',
+                                                                padding: 0,
+                                                                fontSize: 'inherit'
+                                                            }}
+                                                        >
+                                                            오류 내역 보기
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            )}
+                                            
+                                            <MessageContent 
+                                                text={msg.text} 
+                                                onCodeChange={(newText) => {
+                                                    updateMessage(index, newText);
+                                                }}
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+                            </React.Fragment>
+                        ))}
+                        
+                        {/* 로딩 표시 */}
+                        {isLoading && (
+                            <div className="message assistant" style={{
+                                padding: '0',
+                                backgroundColor: 'transparent'
+                            }}>
+                                <div className="message-content" style={{
+                                    backgroundColor: '#f8f9fa',
+                                    border: '1px solid #e9ecef',
+                                    borderRadius: '12px',
+                                    padding: '16px',
+                                    boxShadow: '0 2px 10px rgba(0,0,0,0.05)',
+                                    overflow: 'hidden'
+                                }}>
+                                    <div style={{
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        padding: '8px'
+                                    }}>
+                                        {/* 애니메이션 로딩 인디케이터 */}
+                                        <div style={{
+                                            display: 'flex',
+                                            justifyContent: 'center',
+                                            marginBottom: '16px'
+                                        }}>
+                                            <div className="loading-dots" style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center'
+                                            }}>
+                                                {[...Array(3)].map((_, i) => (
+                                                    <div key={i} style={{
+                                                        width: '12px',
+                                                        height: '12px',
+                                                        backgroundColor: '#6366f1',
+                                                        borderRadius: '50%',
+                                                        margin: '0 4px',
+                                                        animation: 'bounce 1.4s infinite ease-in-out',
+                                                        animationDelay: `${i * 0.16}s`
+                                                    }}></div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                        
+                                        {/* 로딩 메시지 */}
+                                        <div style={{
+                                            fontSize: '15px',
+                                            fontWeight: '500',
+                                            color: '#4f46e5',
+                                            textAlign: 'center',
+                                            marginBottom: '8px'
+                                        }}>
+                                            GeoGebra 명령어 생성 중
+                                        </div>
+                                        
+                                        {/* 부가 텍스트 */}
+                                        <div style={{
+                                            fontSize: '13px',
+                                            color: '#6b7280',
+                                            textAlign: 'center'
+                                        }}>
+                                            최적의 기하학적 표현을 찾고 있습니다...
+                                        </div>
+                                        
+                                        {/* 프로그레스 바 */}
+                                        <div style={{
+                                            width: '100%',
+                                            height: '4px',
+                                            backgroundColor: '#e5e7eb',
+                                            borderRadius: '2px',
+                                            marginTop: '16px',
+                                            overflow: 'hidden',
+                                            position: 'relative'
+                                        }}>
+                                            <div className="progress-bar-animation" style={{
+                                                position: 'absolute',
+                                                top: '0',
+                                                left: '0',
+                                                height: '100%',
+                                                width: '30%',
+                                                backgroundColor: '#4f46e5',
+                                                borderRadius: '2px',
+                                                animation: 'progress-bar 2s infinite ease-in-out'
+                                            }}></div>
                                         </div>
                                     </div>
                                 </div>
-                            ) : (
-                                /* 일반 메시지 - 기존 코드 유지 */
-                                <div className={`message ${msg.role}`}>
-                                    <div className="message-content" style={{
-                                        // 메시지 타입에 따른 스타일 적용
-                                        ...(msg.role === 'user' ? {
-                                            // 사용자 메시지 스타일 유지
-                                            backgroundColor: 'rgba(255, 255, 255, 0.9)',
-                                            color: '#000000',
-                                            marginLeft: 'auto',
-                                            maxWidth: '100%',
+                            </div>
+                        )}
+                        
+                        <div ref={messagesEndRef} />
+                    </div>
+                )}
+                
+                {/* 에러 로그 탭 컨텐츠 */}
+                {activeTab === 'errors' && (
+                    <div className="error-log" style={{ 
+                        flex: 1, 
+                        overflowY: 'auto', 
+                        maxHeight: 'calc(100vh - 390px)',
+                        padding: '10px'
+                    }}>
+                        {errorBlocks.length === 0 ? (
+                            <div style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                height: '200px',
+                                color: '#6b7280',
+                                textAlign: 'center',
+                                padding: '20px'
+                            }}>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                <p style={{ marginTop: '16px' }}>오류가 없습니다.</p>
+                                <p style={{ fontSize: '13px' }}>명령어 실행 중 발생한 오류는 여기에 표시됩니다.</p>
+                            </div>
+                        ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                                <div style={{ 
+                                    display: 'flex', 
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    marginBottom: '8px'
+                                }}>
+                                    <h3 style={{ margin: 0, fontSize: '16px' }}>오류 목록</h3>
+                                    <button
+                                        onClick={() => setErrorBlocks([])}
+                                        style={{
+                                            background: 'none',
                                             border: 'none',
-                                            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)'
-                                        } : {
-                                            // assistant/gpt 메시지 스타일 업데이트: 사용자 메시지와 유사하게 만들기
-                                            backgroundColor: 'rgba(255, 255, 255, 0.95)',
-                                            color: '#212529',
-                                            marginRight: 'auto',
-                                            maxWidth: '100%',
-                                            border: 'none',
-                                            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)'
-                                        })
-                                    }}>
-                                        {/* 재생성된 메시지인 경우, 에러 블록을 먼저 표시 */}
-                                        {msg.isRegenerated && msg.errorBlockId && errorBlocks.find(block => block.id === msg.errorBlockId) && (
-                                            <div style={{
-                                                backgroundColor: '#ffebee',
-                                                padding: '8px',
-                                                borderRadius: '4px',
-                                                marginBottom: '16px',
-                                                fontSize: '13px'
-                                            }}>
-                                                <ErrorInfoBlock 
-                                                    errorMessage={errorBlocks.find(block => block.id === msg.errorBlockId).errorMessage}
-                                                    originalResponse={errorBlocks.find(block => block.id === msg.errorBlockId).originalResponse}
-                                                    isResolved={errorBlocks.find(block => block.id === msg.errorBlockId).isResolved}
-                                                />
-                                            </div>
-                                        )}
-                                        
-                                        {/* 재생성된 메시지인 경우 스타일 변경 */}
-                                        {msg.isRegenerated && (
-                                            <div style={{
-                                                backgroundColor: '#e8f5e9',
-                                                padding: '8px',
-                                                borderRadius: '4px',
-                                                marginBottom: '8px',
-                                                fontSize: '13px',
-                                                color: '#2e7d32',
-                                                fontWeight: 'bold'
-                                            }}>
-                                                ✓ 재생성된 명령어
-                                            </div>
-                                        )}
-                                        
-                                        <MessageContent 
-                                            text={msg.text} 
-                                            onCodeChange={(newText) => {
-                                                updateMessage(index, newText);
-                                            }}
-                                        />
-                                    </div>
+                                            color: '#6b7280',
+                                            cursor: 'pointer',
+                                            fontSize: '13px',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '4px'
+                                        }}
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                        </svg>
+                                        모두 지우기
+                                    </button>
                                 </div>
-                            )}
-                            
-                            {/* 해당 메시지와 연결된 에러 블록을 바로 아래에 표시 (재생성되지 않은 일반 메시지만) */}
-                            {!msg.isRegenerated && !msg.isFeedback && msg.errorBlockId && errorBlocks.find(block => block.id === msg.errorBlockId) && (
-                                <div className="message system">
-                                    <div className="message-content">
-                                        <ErrorInfoBlock 
-                                            errorMessage={errorBlocks.find(block => block.id === msg.errorBlockId).errorMessage}
-                                            originalResponse={errorBlocks.find(block => block.id === msg.errorBlockId).originalResponse}
-                                            isResolved={errorBlocks.find(block => block.id === msg.errorBlockId).isResolved}
-                                        />
-                                    </div>
-                                </div>
-                            )}
-                        </React.Fragment>
-                    ))}
-                    
-                    {/* 별도 섹션에 모든 에러 블록 표시 - 제거하거나 유지할 수 있습니다 */}
-                    { errorBlocks.length > 0 && (
-                        <div className="error-blocks-section">
-                            {errorBlocks.map(block => (
-                                <div key={block.id} className="message system">
-                                    <div className="message-content">
+                                
+                                {errorBlocks.map((block, index) => (
+                                    <div 
+                                        key={block.id} 
+                                        style={{
+                                            border: '1px solid #e9ecef',
+                                            borderLeft: block.isResolved ? '4px solid #10b981' : '4px solid #ef4444',
+                                            borderRadius: '8px',
+                                            padding: '12px',
+                                            backgroundColor: block.isResolved ? 'rgba(16, 185, 129, 0.05)' : 'rgba(239, 68, 68, 0.05)',
+                                            position: 'relative'
+                                        }}
+                                    >
+                                        <div style={{
+                                            display: 'flex',
+                                            justifyContent: 'space-between',
+                                            alignItems: 'center',
+                                            marginBottom: '8px'
+                                        }}>
+                                            <span style={{
+                                                fontSize: '14px',
+                                                fontWeight: 'bold',
+                                                color: block.isResolved ? '#10b981' : '#ef4444'
+                                            }}>
+                                                {block.isResolved ? '해결됨' : '미해결'}
+                                            </span>
+                                            <span style={{
+                                                fontSize: '12px',
+                                                color: '#6b7280'
+                                            }}>
+                                                {new Date(block.timestamp || Date.now()).toLocaleString()}
+                                            </span>
+                                        </div>
+                                        
                                         <ErrorInfoBlock 
                                             errorMessage={block.errorMessage}
                                             originalResponse={block.originalResponse}
                                             isResolved={block.isResolved}
                                         />
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    )
-                    }
-     
-                    {/* 로딩 표시 */}
-                    {isLoading && (
-                        <div className="message assistant" style={{
-                            padding: '0',
-                            backgroundColor: 'transparent'
-                        }}>
-                            <div className="message-content" style={{
-                                backgroundColor: '#f8f9fa',
-                                border: '1px solid #e9ecef',
-                                borderRadius: '12px',
-                                padding: '16px',
-                                boxShadow: '0 2px 10px rgba(0,0,0,0.05)',
-                                overflow: 'hidden'
-                            }}>
-                                <div style={{
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    padding: '8px'
-                                }}>
-                                    {/* 애니메이션 로딩 인디케이터 */}
-                                    <div style={{
-                                        display: 'flex',
-                                        justifyContent: 'center',
-                                        marginBottom: '16px'
-                                    }}>
-                                        <div className="loading-dots" style={{
+                                        
+                                        <div style={{
                                             display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center'
+                                            justifyContent: 'flex-end',
+                                            gap: '8px',
+                                            marginTop: '8px'
                                         }}>
-                                            {[...Array(3)].map((_, i) => (
-                                                <div key={i} style={{
-                                                    width: '12px',
-                                                    height: '12px',
-                                                    backgroundColor: '#6366f1',
-                                                    borderRadius: '50%',
-                                                    margin: '0 4px',
-                                                    animation: 'bounce 1.4s infinite ease-in-out',
-                                                    animationDelay: `${i * 0.16}s`
-                                                }}></div>
-                                            ))}
+                                            <button
+                                                onClick={() => updateErrorBlockStatus(block.id, !block.isResolved)}
+                                                style={{
+                                                    backgroundColor: block.isResolved ? '#6b7280' : '#10b981',
+                                                    color: 'white',
+                                                    border: 'none',
+                                                    padding: '4px 8px',
+                                                    borderRadius: '4px',
+                                                    fontSize: '12px',
+                                                    cursor: 'pointer'
+                                                }}
+                                            >
+                                                {block.isResolved ? '미해결로 표시' : '해결됨으로 표시'}
+                                            </button>
+                                            <button
+                                                onClick={() => removeErrorBlock(block.id)}
+                                                style={{
+                                                    backgroundColor: '#ef4444',
+                                                    color: 'white',
+                                                    border: 'none',
+                                                    padding: '4px 8px',
+                                                    borderRadius: '4px',
+                                                    fontSize: '12px',
+                                                    cursor: 'pointer'
+                                                }}
+                                            >
+                                                삭제
+                                            </button>
                                         </div>
                                     </div>
-                                    
-                                    {/* 로딩 메시지 */}
-                                    <div style={{
-                                        fontSize: '15px',
-                                        fontWeight: '500',
-                                        color: '#4f46e5',
-                                        textAlign: 'center',
-                                        marginBottom: '8px'
-                                    }}>
-                                        GeoGebra 명령어 생성 중
-                                    </div>
-                                    
-                                    {/* 부가 텍스트 */}
-                                    <div style={{
-                                        fontSize: '13px',
-                                        color: '#6b7280',
-                                        textAlign: 'center'
-                                    }}>
-                                        최적의 기하학적 표현을 찾고 있습니다...
-                                    </div>
-                                    
-                                    {/* 프로그레스 바 */}
-                                    <div style={{
-                                        width: '100%',
-                                        height: '4px',
-                                        backgroundColor: '#e5e7eb',
-                                        borderRadius: '2px',
-                                        marginTop: '16px',
-                                        overflow: 'hidden',
-                                        position: 'relative'
-                                    }}>
-                                        <div className="progress-bar-animation" style={{
-                                            position: 'absolute',
-                                            top: '0',
-                                            left: '0',
-                                            height: '100%',
-                                            width: '30%',
-                                            backgroundColor: '#4f46e5',
-                                            borderRadius: '2px',
-                                            animation: 'progress-bar 2s infinite ease-in-out'
-                                        }}></div>
-                                    </div>
-                                </div>
+                                ))}
                             </div>
-                        </div>
-                    )}
-                    
-                    <div ref={messagesEndRef} />
-                </div>
+                        )}
+                    </div>
+                )}
                 
                 {/* 하단 영역: 추천 검색어 + 입력창 */}
                 <div style={{ padding: '5px', borderTop: '1px solid #eaeaea' }}>

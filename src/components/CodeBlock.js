@@ -82,14 +82,16 @@ const CodeBlock = ({ code, onCodeChange, executeCommands }) => {
             </div>
             <button
                 onClick={handleModify}
+
                 style={{
                     padding: '8px 16px',
-                    backgroundColor: '#4CAF50',
-                    color: 'white',
-                    border: 'none',
+                    backgroundColor: '#e8f5e9',
+                    color: '#2e7d32',
                     borderRadius: '4px',
                     cursor: 'pointer',
-                    fontSize: 'var(--font-size-base)'
+                    fontSize: 'var(--font-size-base)',
+                    border: '1px solid #c8e6c9',
+                    fontWeight: 'bold'
                 }}
             >
                 修改
