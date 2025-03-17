@@ -66,15 +66,31 @@ const SearchResults = ({ searchResults, isSearching, selectCommand }) => {
         justifyContent: 'space-between',
         alignItems: 'center'
       }}>
-        <span>相关 GeoGebra 指令 </span>
-        {isSearching && <span style={{ fontSize: '14px', color: '#666' }}>搜索中...</span>}
+        <span>Related Commands </span>
+        {isSearching && <span style={{ fontSize: '14px', color: '#666' }}>Searching...</span>}
       </h3>
+      
+      <hr style={{ 
+        margin: '10px 0 15px 0',
+        border: 'none',
+        height: '1px',
+        backgroundColor: '#e0e0e0'
+      }} />
+      
+      <p style={{ 
+        margin: '0 0 15px 0',
+        fontSize: '13px',
+        color: '#666',
+        fontStyle: 'italic'
+      }}>
+        Commands found through SBERT similarity search
+      </p>
       
       {!isSearching && searchResults.length > 0 ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           {searchResults.map((result, index) => (
             <div 
-              key={index}
+              key={index}상세 정보 
               ref={el => resultRefs.current[index] = el}
               style={{
                 border: '1px solid #e0e0e0',
@@ -99,7 +115,7 @@ const SearchResults = ({ searchResults, isSearching, selectCommand }) => {
                   fontWeight: 'bold', 
                   fontSize: '14px'
                 }}>
-                  <span style={{ color: '#000' }}>相似度: </span>
+                  <span style={{ color: '#000' }}>Similarity: </span>
                   <span style={{ color: '#4CAF50' }}>{(result.similarity).toFixed(4)}</span>
                 </span>
               </div>
@@ -198,7 +214,7 @@ const SearchResults = ({ searchResults, isSearching, selectCommand }) => {
                       {result.syntax && (
                         <div style={{ marginBottom: '12px' }}>
                         <strong style={{ display: 'flex', alignItems: 'center', marginBottom: '5px' }}>
-                            <span style={{ marginRight: '5px' }}>🔠</span> 语法:
+                            <span style={{ marginRight: '5px' }}>🔠</span> Syntax:
                         </strong> 
                         <div style={{ 
                             wordBreak: 'break-all', 
@@ -218,7 +234,7 @@ const SearchResults = ({ searchResults, isSearching, selectCommand }) => {
                     {result.link && (
                       <div style={{ marginBottom: '12px' }}>
                         <strong style={{ display: 'flex', alignItems: 'center', marginBottom: '5px' }}>
-                          <span style={{ marginRight: '5px' }}>🔗</span> 链接:
+                          <span style={{ marginRight: '5px' }}>🔗</span> Link:
                         </strong> 
                         <div style={{
                           wordBreak: 'break-all',
@@ -251,7 +267,7 @@ const SearchResults = ({ searchResults, isSearching, selectCommand }) => {
                     {result.example && result.example.length > 0 && (
                       <div style={{ marginBottom: '12px' }}>
                         <strong style={{ display: 'flex', alignItems: 'center', marginBottom: '5px' }}>
-                          <span style={{ marginRight: '5px' }}>✏️</span> 示例:
+                          <span style={{ marginRight: '5px' }}>✏️</span> Example:
                         </strong>
                         <div style={{ 
                           background: '#f5f7f9', 
@@ -281,7 +297,7 @@ const SearchResults = ({ searchResults, isSearching, selectCommand }) => {
                     {result.note && (
                       <div style={{ marginBottom: '8px' }}>
                         <strong style={{ display: 'flex', alignItems: 'center', marginBottom: '5px' }}>
-                          <span style={{ marginRight: '5px' }}>💡</span> 备注:
+                          <span style={{ marginRight: '5px' }}>💡</span> Note:
                         </strong> 
                         <div style={{ 
                           wordBreak: 'break-all', 
@@ -304,7 +320,7 @@ const SearchResults = ({ searchResults, isSearching, selectCommand }) => {
         </div>
       ) : !isSearching && (
         <div style={{ textAlign: 'center', padding: '20px', color: '#666' }}>
-          <p>没有搜索结果</p>
+          <p>No search results</p>
         </div>
       )}
     </div>

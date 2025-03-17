@@ -25,8 +25,8 @@ const ErrorInfoBlock = ({ errorMessage, originalResponse, isResolved = false }) 
       }}>
         <span>
           {isResolved 
-            ? '✓ GeoGebra command 재생성 완료' 
-            : 'GeoGebra command 재생성 중'}
+            ? '✓ GeoGebra command regeneration completed' 
+            : 'GeoGebra command regeneration in progress'}
         </span>
         {isResolved && (
           <span style={{ 
@@ -35,7 +35,7 @@ const ErrorInfoBlock = ({ errorMessage, originalResponse, isResolved = false }) 
             padding: '2px 6px', 
             borderRadius: '4px' 
           }}>
-            해결됨
+            Resolved
           </span>
         )}
       </div>
@@ -54,7 +54,7 @@ const ErrorInfoBlock = ({ errorMessage, originalResponse, isResolved = false }) 
         }}
       >
         <div style={{ fontWeight: 'bold', fontSize: '13px', color: '#555' }}>
-          상세 정보 {isExpanded ? '접기' : '펼치기'}
+          Detailed Information {isExpanded ? 'Collapse' : 'Expand'}
         </div>
         <div style={{ color: '#666' }}>
           {isExpanded ? '▼' : '▶'}
@@ -69,7 +69,7 @@ const ErrorInfoBlock = ({ errorMessage, originalResponse, isResolved = false }) 
           borderRadius: '4px'
         }}>
           <div>
-            <h4 style={{ margin: '0 0 8px 0', fontSize: '14px' }}>기존 LLM 답변:</h4>
+            <h4 style={{ margin: '0 0 8px 0', fontSize: '14px' }}>Original LLM Answer:</h4>
             <pre style={{ 
               margin: '4px 0', 
               padding: '8px', 
@@ -83,7 +83,7 @@ const ErrorInfoBlock = ({ errorMessage, originalResponse, isResolved = false }) 
           </div>
           
           <div style={{ marginTop: '12px' }}>
-            <h4 style={{ margin: '0 0 8px 0', fontSize: '14px', color: '#d32f2f' }}>오류 메시지:</h4>
+            <h4 style={{ margin: '0 0 8px 0', fontSize: '14px', color: '#d32f2f' }}>Error Message:</h4>
             <pre style={{ 
               margin: '4px 0', 
               padding: '8px', 
@@ -113,7 +113,7 @@ const ErrorInfoBlock = ({ errorMessage, originalResponse, isResolved = false }) 
                   marginRight: '8px',
                   animation: 'spin 1s linear infinite'
                 }}></div>
-                <span>명령어를 수정하고 새로운 응답을 생성하는 중입니다...</span>
+                <span>Fixing command errors...</span>
               </div>
             </div>
           )}

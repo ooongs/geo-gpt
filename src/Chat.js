@@ -55,7 +55,7 @@ function Chat() {
 
     // 스크롤 관련 함수
     const scrollToBottom = () => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
     };
 
     // 메시지 업데이트 시 스크롤
@@ -90,7 +90,7 @@ function Chat() {
                         // 수정 내용 메시지 추가
                             const updatedMessages = [...messages, {
                                 role: 'system',
-                                text: `**명령어 자동 수정됨**\n원본: \`${data.original}\`\n수정: \`${data.corrected}\`\n오류: ${data.error}`,
+                                text: `**Command automatically corrected**\nOriginal: \`${data.original}\`\nCorrected: \`${data.corrected}\`\nError: ${data.error}`,
                                 errorBlockId: null
                             }];
                             setMessages(updatedMessages);
@@ -104,7 +104,7 @@ function Chat() {
                             // 사용자에게 알림
                             const updatedMessages = [...messages, {
                             role: 'system',
-                                text: `**명령어 수정 중**\n수정된 명령어 \`${data.corrected}\`에서도 오류가 발생했습니다. 다시 수정을 요청합니다.\n오류: ${result.error}`,
+                                text: `**Command modification in progress**\nThe corrected command \`${data.corrected}\` also resulted in an error. Please request modification again.\nError: ${result.error}`,
                                 errorBlockId: null
                             }];
                             setMessages(updatedMessages);
@@ -138,10 +138,10 @@ function Chat() {
                         if (feedbackIndex !== -1) {
                             // 피드백 메시지 대체
                             newMessages.splice(feedbackIndex, 1, {
-                                role: 'assistant',
-                                text: data.content,
+                        role: 'assistant',
+                        text: data.content,
                                 isRegenerated: true,
-                                errorBlockId: null
+                        errorBlockId: null
                             });
                             
                             console.log('피드백 메시지를 대체했습니다.');
@@ -365,8 +365,7 @@ function Chat() {
         setDetectedError(null);
 
         const userMessage = { role: 'user', text: input };
-        const updatedMessages = [...messages, userMessage];
-        setMessages(updatedMessages);
+        setMessages(prevMessages => [...prevMessages, userMessage]);
         setInput('');
         setIsLoading(true);
 
@@ -377,7 +376,7 @@ function Chat() {
         
         try {
             // API 요청 준비
-            const apiMessages = updatedMessages.map(msg => ({
+            const apiMessages = messages.map(msg => ({
                 role: msg.role,
                 content: msg.text
             }));
@@ -439,8 +438,8 @@ function Chat() {
                             // 오류 피드백 메시지를 messages에 직접 추가
                             setMessages(prev => [...prev, {
                                 role: 'system',
-                                text: `**명령어 오류 발생**\n${errors.map(err => 
-                                    `명령어: \`${err.command}\`\n오류: ${err.error}`).join('\n\n')}`,
+                                text: `**Command error occurred**\n${errors.map(err => 
+                                    `Command: \`${err.command}\`\nError: ${err.error}`).join('\n\n')}`,
                                 errorBlockId: errorBlockId,
                                 isFeedback: true
                             }]);
@@ -525,21 +524,28 @@ function Chat() {
                     // 오류가 없는 경우 바로 실행
                         if (retryCount === 0) {
                             // 첫 번째 시도에서 성공한 경우 메시지 추가
-                            const updatedMessages = [...messages, {
+                            setMessages(prevMessages => {
+                                // 유저 메시지가 있는지 확인
+                                const lastMessage = prevMessages[prevMessages.length - 1];
+                                const hasUserMessage = lastMessage && lastMessage.role === 'user';
+                                
+                                // 유저 메시지가 있으면 그대로 두고 응답 추가
+                                return [...prevMessages, {
                                 role: 'assistant',
                                 text: responseToUpdate,
                                 errorBlockId: null
                             }];
-                            setMessages(updatedMessages);
+                            });
                         } else {
                             // 재시도에서 성공한 경우 - 재생성된 메시지로 표시
-                            const updatedMessages = [...messages, {
+                            setMessages(prevMessages => {
+                                return [...prevMessages, {
                         role: 'assistant',
                                 text: responseToUpdate,
                                 isRegenerated: true,
                                 errorBlockId: null
                             }];
-                            setMessages(updatedMessages);
+                            });
                         }
                         
                         // 메인 앱 초기화 (재시도 시에는 이미 초기화되어 있음)
@@ -581,13 +587,13 @@ function Chat() {
             if (error.code === 'ERR_NETWORK') {
               const updatedMessages = [...messages, {
                 role: 'assistant',
-                text: '서버 연결 오류가 발생했습니다. 백엔드 서버가 실행 중인지 확인해주세요.'
+                text: 'A server connection error occurred. Please check if the backend server is running.'
               }];
               setMessages(updatedMessages);
             } else {
               const updatedMessages = [...messages, {
                 role: 'assistant',
-                text: '오류가 발생했습니다: ' + (error.message || '알 수 없는 오류')
+                text: 'An error occurred: ' + (error.message || 'Unknown error')
               }];
               setMessages(updatedMessages);
             }
@@ -766,7 +772,7 @@ function Chat() {
                         onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#4338ca'}
                         onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#4f46e5'}
                     >
-                        保存聊天记录
+                        Save Chat History
                     </button>
                 </div>
                 
@@ -787,7 +793,7 @@ function Chat() {
                             transition: 'all 0.2s ease'
                         }}
                     >
-                        대화
+                        Chat
                     </div>
                     <div 
                         onClick={() => changeTab('errors')}
@@ -801,7 +807,7 @@ function Chat() {
                             transition: 'all 0.2s ease'
                         }}
                     >
-                        오류 로그
+                        Error Log
                         {unreadErrors > 0 && (
                             <span style={{
                                 position: 'absolute',
@@ -826,15 +832,18 @@ function Chat() {
                 
                 {/* 채팅 탭 컨텐츠 */}
                 {activeTab === 'chat' && (
-                    <div className="messages" style={{ flex: 1, overflowY: 'auto', maxHeight: 'calc(100vh - 390px)' }}>
+                    <div className="messages" style={{ 
+                        flex: 1, 
+                        overflowY: 'auto', 
+                        maxHeight: 'calc(100vh - 390px)',
+                        position: 'relative'
+                    }}>
                         {/* 메시지 표시 - 에러 블록 표시 제거 */}
-                        {messages.map((msg, index) => (
-                            <React.Fragment key={index}>
+                    {messages.map((msg, index) => (
+                        <React.Fragment key={index}>
                                 {/* 피드백 메시지인 경우 특별한 UI 적용 */}
                                 {msg.isFeedback ? (
                                     <div className={`message ${msg.role}`} style={{
-                                        borderLeft: '4px solid #2196f3',
-                                        backgroundColor: '#e3f2fd',
                                         marginBottom: '10px'
                                     }}>
                                         <div className="message-content" style={{ position: 'relative' }}>
@@ -860,7 +869,7 @@ function Chat() {
                                                     fontWeight: 'bold', 
                                                     color: '#2196f3'
                                                 }}>
-                                                    명령어 오류 수정 중... 
+                                                    Fixing command errors... 
                                                     <button 
                                                         onClick={() => changeTab('errors')}
                                                         style={{
@@ -874,7 +883,7 @@ function Chat() {
                                                             fontWeight: 'bold'
                                                         }}
                                                     >
-                                                        오류 보기
+                                                        View Errors
                                                     </button>
                                                 </span>
                                             </div>
@@ -889,7 +898,7 @@ function Chat() {
                                     </div>
                                 ) : (
                                     /* 일반 메시지 - 에러 블록 표시 제거 */
-                                    <div className={`message ${msg.role}`}>
+                            <div className={`message ${msg.role}`}>
                                         <div className="message-content" style={{
                                             // 메시지 타입에 따른 스타일 적용
                                             ...(msg.role === 'user' ? {
@@ -909,50 +918,47 @@ function Chat() {
                                             })
                                         }}>
                                             {/* 재생성된 메시지인 경우 "오류 수정됨" 배지 표시 */}
-                                            {msg.isRegenerated && (
-                                                <div style={{
+                                    {msg.isRegenerated && (
+                                        <div style={{
                                                     display: 'flex',
                                                     alignItems: 'center',
-                                                    backgroundColor: '#e8f5e9',
+                                            backgroundColor: '#e8f5e9',
                                                     padding: '4px 8px',
-                                                    borderRadius: '4px',
-                                                    marginBottom: '8px',
-                                                    fontSize: '13px',
-                                                    color: '#2e7d32',
-                                                    fontWeight: 'bold'
-                                                }}>
-                                                    <span>✓ 재생성된 명령어</span>
-                                                    {msg.errorBlockId && (
-                                                        <button 
-                                                            onClick={() => {
-                                                                changeTab('errors');
-                                                                // 강조 표시를 위한 로직 추가 가능
-                                                            }}
-                                                            style={{
-                                                                background: 'none',
-                                                                border: 'none',
-                                                                color: '#2e7d32',
-                                                                textDecoration: 'underline',
-                                                                cursor: 'pointer',
-                                                                marginLeft: '8px',
-                                                                padding: 0,
-                                                                fontSize: 'inherit'
-                                                            }}
-                                                        >
-                                                            오류 내역 보기
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            )}
-                                            
-                                            <MessageContent 
-                                                text={msg.text} 
-                                                onCodeChange={(newText) => {
-                                                    updateMessage(index, newText);
-                                                }}
-                                            />
+                                            borderRadius: '4px',
+                                            marginBottom: '8px',
+                                            fontSize: '13px',
+                                            color: '#2e7d32',
+                                            fontWeight: 'bold'
+                                        }}>
+                                                    <span>✓ Regenerated Command</span>
+                                                    <button 
+                                                        onClick={() => {
+                                                            changeTab('errors');
+                                                        }}
+                                                        style={{
+                                                            background: 'none',
+                                                            border: 'none',
+                                                            color: '#2e7d32',
+                                                            textDecoration: 'underline',
+                                                            cursor: 'pointer',
+                                                            marginLeft: '8px',
+                                                            padding: 0,
+                                                            fontSize: 'inherit'
+                                                        }}
+                                                    >
+                                                        View Error History
+                                                    </button>
                                         </div>
-                                    </div>
+                                    )}
+                                    
+                                <MessageContent 
+                                    text={msg.text} 
+                                    onCodeChange={(newText) => {
+                                        updateMessage(index, newText);
+                                    }}
+                                />
+                            </div>
+                        </div>
                                 )}
                             </React.Fragment>
                         ))}
@@ -1011,7 +1017,7 @@ function Chat() {
                                             textAlign: 'center',
                                             marginBottom: '8px'
                                         }}>
-                                            GeoGebra 명령어 생성 중
+                                            Generating GeoGebra commands...
                                         </div>
                                         
                                         {/* 부가 텍스트 */}
@@ -1020,7 +1026,7 @@ function Chat() {
                                             color: '#6b7280',
                                             textAlign: 'center'
                                         }}>
-                                            최적의 기하학적 표현을 찾고 있습니다...
+                                            Finding the optimal geometric representation...
                                         </div>
                                         
                                         {/* 프로그레스 바 */}
@@ -1045,11 +1051,11 @@ function Chat() {
                                             }}></div>
                                         </div>
                                     </div>
+                                    </div>
                                 </div>
-                            </div>
-                        )}
+                            )}
                         
-                        <div ref={messagesEndRef} />
+                        <div ref={messagesEndRef} style={{ overflow: 'hidden' }} />
                     </div>
                 )}
                 
@@ -1075,8 +1081,8 @@ function Chat() {
                                 <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                                 </svg>
-                                <p style={{ marginTop: '16px' }}>오류가 없습니다.</p>
-                                <p style={{ fontSize: '13px' }}>명령어 실행 중 발생한 오류는 여기에 표시됩니다.</p>
+                                <p style={{ marginTop: '16px' }}>No errors.</p>
+                                <p style={{ fontSize: '13px' }}>Errors that occur during command execution will be displayed here.</p>
                             </div>
                         ) : (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -1086,7 +1092,7 @@ function Chat() {
                                     alignItems: 'center',
                                     marginBottom: '8px'
                                 }}>
-                                    <h3 style={{ margin: 0, fontSize: '16px' }}>오류 목록</h3>
+                                    <h3 style={{ margin: 0, fontSize: '16px' }}>Error List</h3>
                                     <button
                                         onClick={() => setErrorBlocks([])}
                                         style={{
@@ -1103,7 +1109,7 @@ function Chat() {
                                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                         </svg>
-                                        모두 지우기
+                                        Clear All
                                     </button>
                                 </div>
                                 
@@ -1130,7 +1136,7 @@ function Chat() {
                                                 fontWeight: 'bold',
                                                 color: block.isResolved ? '#10b981' : '#ef4444'
                                             }}>
-                                                {block.isResolved ? '해결됨' : '미해결'}
+                                                {block.isResolved ? 'Resolved' : 'Unresolved'}
                                             </span>
                                             <span style={{
                                                 fontSize: '12px',
@@ -1164,7 +1170,7 @@ function Chat() {
                                                     cursor: 'pointer'
                                                 }}
                                             >
-                                                {block.isResolved ? '미해결로 표시' : '해결됨으로 표시'}
+                                                {block.isResolved ? 'Mark as Unresolved' : 'Mark as Resolved'}
                                             </button>
                                             <button
                                                 onClick={() => removeErrorBlock(block.id)}
@@ -1178,15 +1184,15 @@ function Chat() {
                                                     cursor: 'pointer'
                                                 }}
                                             >
-                                                삭제
+                                                Delete
                                             </button>
-                                        </div>
                                     </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                )}
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                        </div>
+                    )}
                 
                 {/* 하단 영역: 추천 검색어 + 입력창 */}
                 <div style={{ padding: '5px', borderTop: '1px solid #eaeaea' }}>
@@ -1207,7 +1213,7 @@ function Chat() {
                                     sendMessage();
                                 }
                             }}
-                            placeholder="请输入几何图形描述"
+                            placeholder="Please enter a geometric description"
                             disabled={isLoading}
                             style={{
                                 flex: 1,
@@ -1238,7 +1244,7 @@ function Chat() {
                             onMouseOver={(e) => !isLoading && (e.currentTarget.style.backgroundColor = '#4338ca')}
                             onMouseOut={(e) => !isLoading && (e.currentTarget.style.backgroundColor = '#4f46e5')}
                         >
-                            发送
+                            Send
                         </button>
                     </div>
                 </div>

@@ -8,7 +8,7 @@ const ModelSelector = ({ selectedModel, setSelectedModel, modelOptions }) => {
       gap: '10px',
       padding: '5px'
     }}>
-      <span style={{ fontSize: '14px', fontWeight: 'bold' }}>模型选择:</span>
+      <span style={{ fontSize: '14px', fontWeight: 'bold' }}>Model:</span>
       <div style={{ 
         display: 'flex', 
         gap: '8px'

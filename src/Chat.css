@@ -39,7 +39,7 @@
 }
 
 .message.user {
-    background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+    background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
     color: white;
     margin-left: 20%;
     border-radius: var(--radius-lg) var(--radius-lg) 0 var(--radius-lg);
@@ -55,12 +55,12 @@
     width: 20px;
     height: 20px;
     border-radius: 50%;
-    background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+    background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
     z-index: -1;
 }
 
 .message.assistant, .message.gpt, .message.system {
-    background: linear-gradient(135deg, var(--secondary-color) 0%, #8b5cf6 100%);
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
     color: white;
     margin-right: 20%;
     border-radius: var(--radius-lg) var(--radius-lg) var(--radius-lg) 0;
@@ -76,7 +76,7 @@
     width: 20px;
     height: 20px;
     border-radius: 50%;
-    background: linear-gradient(135deg, var(--secondary-color) 0%, #8b5cf6 100%);
+    background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
     z-index: -1;
 }
 
