@@ -24,13 +24,16 @@ const apiClient = axios.create({
 // 소켓 연결 함수
 const connectSocket = () => {
   try {
-    const socket = io(API_BASE_URL + '/ws', {
+    // 웹소켓 엔드포인트로 연결
+    const socket = io(API_BASE_URL, {
       transports: ['websocket'],
       reconnection: true,
       reconnectionAttempts: 5,
-      reconnectionDelay: 1000
+      reconnectionDelay: 1000,
+      path: '/socket.io'  // Socket.IO 기본 경로
     });
     
+    // 일반 Socket.IO 연결 이벤트
     socket.on('connect', () => {
       console.log('소켓 서버 연결됨');
     });
@@ -42,6 +45,30 @@ const connectSocket = () => {
     return socket;
   } catch (err) {
     console.error('소켓 초기화 오류:', err);
+    return null;
+  }
+};
+
+// WebSocket 직접 연결 함수 추가
+const connectWebSocket = () => {
+  try {
+    const ws = new WebSocket(`ws://${API_BASE_URL.replace('http://', '')}/ws`);
+    
+    ws.onopen = () => {
+      console.log('WebSocket 연결 성공');
+    };
+    
+    ws.onerror = (error) => {
+      console.error('WebSocket 오류:', error);
+    };
+    
+    ws.onclose = () => {
+      console.log('WebSocket 연결 종료');
+    };
+    
+    return ws;
+  } catch (err) {
+    console.error('WebSocket 초기화 오류:', err);
     return null;
   }
 };
@@ -66,6 +93,7 @@ function Chat() {
     const [commandErrors, setCommandErrors] = useState([]);
     const testAppRef = useRef(null);
     const [socket, setSocket] = useState(null);
+    const [ws, setWs] = useState(null);
 
     // 메시지 컨테이너 참조
     const messagesEndRef = useRef(null);
@@ -91,7 +119,7 @@ function Chat() {
         setIsSearching(true);
         try {
             const response = await axios.post(
-                'http://localhost:8000/search-command',
+                'http://localhost:8000/search-commands',
                 {
                     query: query,
                     top_k: 5,
@@ -107,67 +135,169 @@ function Chat() {
         setIsSearching(false);
     };
 
-    // 명령어 테스트 실행 함수
-    const testCommands = async (commands) => {
-        const testApp = window.testApp;
-        if (!testApp) {
-            console.error('테스트용 GeoGebra 앱이 초기화되지 않았습니다.');
-            return { valid: false, errors: ['테스트 앱 초기화 실패'] };
-        }
-        
-        // 테스트 앱 초기화
-        testApp.reset();
-        
-        const errors = [];
-        const validCommands = [];
-        
-        // errorMessage 상태를 체크하기 위한 Promise 생성 함수
-        const waitForError = () => {
-            return new Promise(resolve => {
-                // 짧은 시간 후 현재 에러 메시지 확인
-                setTimeout(() => {
-                    resolve(errorMessage);
-                }, 300); // 에러 다이얼로그 표시 및 Observer 처리 시간 고려
-            });
-        };
-        
-        // 각 명령어 개별 테스트
-        for (const command of commands) {
-            if (!command.trim()) continue;
+
+    
+    // 명령어 검증 함수 개선 - MutationObserver 오류 활용 강화
+    const validateCommand = async (command) => {
+        return new Promise((resolve) => {
+            if (!window.testApp) {
+                resolve({ valid: false, error: '테스트 앱이 초기화되지 않았습니다.' });
+                return;
+            }
             
-            setErrorMessage(null); // 에러 메시지 초기화
+            // 오류 메시지 초기화
+            setErrorMessage(null);
             
             try {
-                // 명령어 실행
-                const success = testApp.evalCommand(command.trim());
-                
-                // 에러 메시지 확인을 위해 잠시 대기
-                const error = await waitForError();
-                
-                if (error || !success) {
-                    errors.push({
-                        command: command.trim(),
-                        error: error || '알 수 없는 오류'
-                    });
-                } else {
-                    validCommands.push(command.trim());
-                }
-            } catch (e) {
-                errors.push({
-                    command: command.trim(),
-                    error: e.message
+                // 명령어 실행 전 오류 감지 준비
+                const errorPromise = new Promise(resolveError => {
+                    // 오류 감지 타이머
+                    const errorTimer = setTimeout(() => {
+                        // 타임아웃 시 현재 errorMessage 상태 반환
+                        resolveError(errorMessage);
+                    }, 300);
+                    
+                    // errorMessage 상태가 변경되면 즉시 감지하는 함수
+                    const checkErrorInterval = setInterval(() => {
+                        if (errorMessage) {
+                            clearTimeout(errorTimer);
+                            clearInterval(checkErrorInterval);
+                            resolveError(errorMessage);
+                        }
+                    }, 50);
+                    
+                    // 최대 대기 시간 설정
+                    setTimeout(() => {
+                        clearInterval(checkErrorInterval);
+                    }, 300);
                 });
+                
+                // 명령어 실행
+                const success = window.testApp.evalCommand(command.trim());
+                
+                // 오류 메시지 확인
+                errorPromise.then(error => {
+                    const result = { 
+                        valid: !error && success, 
+                        error: error || (success ? '' : '명령어 실행이 실패했습니다.')
+                    };
+                    
+                    // 결과 로깅
+                    console.log(`명령어 검증 결과: ${command.trim()} - ${result.valid ? '성공' : '실패'}`);
+                    if (!result.valid) {
+                        console.log(`오류 메시지: ${result.error}`);
+                    }
+                    
+                    // WebSocket으로 결과 전송
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({
+                            command: command.trim(),
+                            success: result.valid,
+                            error: result.error
+                        }));
+                    }
+                    
+                    resolve(result);
+                });
+            } catch (e) {
+                const result = { valid: false, error: e.message };
+                console.error(`명령어 실행 예외 발생: ${e.message}`);
+                
+                // WebSocket으로 오류 전송
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({
+                        command: command.trim(),
+                        success: false,
+                        error: e.message
+                    }));
+                }
+                
+                resolve(result);
             }
-        }
-        
-        return {
-            valid: errors.length === 0,
-            errors,
-            validCommands
-        };
+        });
     };
     
-    // 오류 피드백을 위한 서버 요청 함수
+    const handleWebSocketMessage = (event) => {
+        try {
+            const data = JSON.parse(event.data);
+            console.log('WebSocket 메시지 수신:', data);
+            
+            // 메시지 타입에 따라 처리
+            switch (data.type) {
+                case 'command_correction':
+                    // 단일 명령어 수정 응답 처리
+                    console.log(`명령어 수정: ${data.original} -> ${data.corrected}`);
+                    
+                    // 수정된 명령어 실행
+                    if (window.app1 && data.corrected) {
+                        window.app1.evalCommand(data.corrected);
+                        
+                        // 수정 내용 메시지 추가
+                        setMessages(prev => [...prev, {
+                            role: 'system',
+                            text: `**명령어 자동 수정됨**\n원본: \`${data.original}\`\n수정: \`${data.corrected}\`\n오류: ${data.error}`
+                        }]);
+                    }
+                    break;
+                    
+                case 'full_correction':
+                    // 전체 응답 재생성 처리
+                    console.log('전체 응답 재생성 수신:', data.content);
+                    
+                    // 재생성된 응답 메시지 추가
+                    setMessages(prev => [...prev, {
+                        role: 'assistant',
+                        text: data.content
+                    }]);
+                    
+                    // 메인 앱 초기화
+                    if (window.app1) window.app1.reset();
+                    
+                    // 재생성된 명령어 실행
+                    if (data.commands && data.commands.length > 0) {
+                        data.commands.forEach(command => {
+                            if (command.trim() && window.app1) {
+                                window.app1.evalCommand(command.trim());
+                            }
+                        });
+                    }
+                    break;
+                    
+                case 'confirmation':
+                    // 성공 확인 메시지
+                    console.log('서버 확인 메시지:', data.message);
+                    break;
+                    
+                case 'error':
+                    // 오류 메시지
+                    console.error('서버 오류 메시지:', data.message);
+                    break;
+                    
+                default:
+                    console.warn('알 수 없는 메시지 타입:', data.type);
+            }
+        } catch (error) {
+            console.error('WebSocket 메시지 처리 오류:', error);
+        }
+    };
+    
+    
+    // WebSocket 연결 설정
+    useEffect(() => {
+        const newWs = connectWebSocket();
+        if (newWs) {
+            newWs.onmessage = handleWebSocketMessage;
+            setWs(newWs);
+        }
+        
+        return () => {
+            if (newWs) {
+                newWs.close();
+            }
+        };
+    }, []);
+    
+    // 오류 피드백을 위한 서버 요청 함수 수정
     const getCommandFeedback = async (originalMessages, errorDetails) => {
         try {
             setFeedbackInProgress(true);
@@ -179,28 +309,57 @@ function Chat() {
                     errorDetails.map(err => `명령어: ${err.command}\n오류: ${err.error}`).join('\n\n')
                 }`
             }];
+            console.log('오류 정보:', errorDetails);
+                      const userQuery = originalMessages.find(msg => msg.role === 'user')?.content || '';
             
-            // 서버에 피드백 요청
-            const response = await axios.post(
-                'http://localhost:8000/generate-commands',
-                {
-                    model: selectedModel,
-                    messages: feedbackMessages.map(msg => ({
-                        role: msg.role,
-                        content: msg.content || msg.text
-                    }))
-                }
-            );
-            
-            return response.data.content;
-        } catch (error) {
-            console.error('피드백 요청 오류:', error);
-            return '명령어 수정 중 오류가 발생했습니다.';
-        } finally {
-            setFeedbackInProgress(false);
-        }
-    };
-    
+                      // WebSocket이 연결되어 있는지 확인
+                      if (ws && ws.readyState === WebSocket.OPEN) {
+                          // 먼저 사용자 쿼리 전송
+                          if (userQuery) {
+                              ws.send(JSON.stringify({
+                                  type: 'query',
+                                  query: userQuery
+                              }));
+                          }
+                          
+                          // 각 오류 명령어에 대해 전체 응답 재생성 요청
+                          for (const err of errorDetails) {
+                              ws.send(JSON.stringify({
+                                  type: 'command_result',
+                                  command: err.command,
+                                  success: false,
+                                  error: err.error,
+                                  regenerate_full: true // 전체 응답 재생성 요청
+                              }));
+                          }
+                          
+                          // 백엔드에서 자동으로 수정하므로 여기서는 원본 메시지만 반환
+                          return `GeoGebra 指令生成有误，反馈系统正在自动修复\n\n${
+                              errorDetails.map(err => `- ${err.command}: ${err.error}`).join('\n')
+                          }`;
+                      } else {
+                          // WebSocket 연결이 없는 경우 기존 방식으로 처리
+                          const response = await axios.post(
+                              'http://localhost:8000/generate-commands',
+                              {
+                                  model: selectedModel,
+                                  messages: feedbackMessages.map(msg => ({
+                                      role: msg.role,
+                                      content: msg.content || msg.text || ''
+                                  }))
+                              }
+                          );
+                          
+                          return response.data.content;
+                      }
+                  } catch (error) {
+                      console.error('피드백 요청 오류:', error);
+                      return '명령어 수정 중 오류가 발생했습니다: ' + error.message;
+                  } finally {
+                      setFeedbackInProgress(false);
+                  }
+              };
+
     // 메시지 전송 함수
     const sendMessage = async () => {
         if (!input.trim() || isLoading) return;
@@ -209,6 +368,8 @@ function Chat() {
         setMessages(prev => [...prev, userMessage]);
         setInput('');
         setIsLoading(true);
+
+        searchCommands(input);
         
         // 테스트 앱 초기화
         if (window.testApp) window.testApp.reset();
@@ -249,7 +410,7 @@ function Chat() {
                 
                 for (const command of commandLines) {
                     if (!command.trim()) continue;
-                    
+                    // 명령어 검증 (testApp에서 실행)
                     const result = await validateCommand(command);
                     if (!result.valid) {
                         hasErrors = true;
@@ -413,19 +574,28 @@ function Chat() {
             }
         }
         
-        return `${command} ${errorMsg}${syntaxLines.length ? '\n\n올바른 문법:\n' + syntaxLines.join('\n') : ''}`;
+        return `${command} ${errorMsg}${syntaxLines.length ? '\n\nCorrect Syntax:\n' + syntaxLines.join('\n') : ''}`;
     };
 
+    // MutationObserver 개선 - 오류 감지 정확도 향상
     useEffect(() => {
+        let lastErrorTime = 0;
+        const errorDebounceTime = 100; // 중복 오류 방지 시간 (ms)
+        
         const observer = new MutationObserver((mutations) => {
             for (const mutation of mutations) {
                 if (mutation.addedNodes.length) {
                     for (const node of mutation.addedNodes) {
                         // 상위 요소가 dialogComponent인지 확인
                         if (node.classList && node.classList.contains('dialogComponent')) {
+                            // 중복 오류 방지 (짧은 시간 내 여러 번 감지되는 것 방지)
+                            const now = Date.now();
+                            if (now - lastErrorTime < errorDebounceTime) continue;
+                            lastErrorTime = now;
+                            
                             const errorMsg = extractErrorMessage(node);
                             if (errorMsg) {
-                                console.log('오류 내용:', errorMsg);
+                                console.log('GeoGebra 오류 다이얼로그 감지:', errorMsg);
                                 setErrorMessage(errorMsg);
                             }
                             
@@ -433,7 +603,7 @@ function Chat() {
                             setTimeout(() => {
                                 const closeButton = node.querySelector('.dialogTextButton');
                                 if (closeButton) closeButton.click();
-                            }, 2000);
+                            }, 500); // 오류 메시지 확인 시간 확보
                             
                             return; // 첫 번째 오류 메시지만 처리
                         }
@@ -441,7 +611,12 @@ function Chat() {
                         // 다른 방법: 내부 컴포넌트 확인
                         const dialogPanel = node.querySelector && node.querySelector('.dialogMainPanel');
                         if (dialogPanel) {
-                            console.log('오류 다이얼로그 패널 감지됨:', dialogPanel);
+                            // 중복 오류 방지
+                            const now = Date.now();
+                            if (now - lastErrorTime < errorDebounceTime) continue;
+                            lastErrorTime = now;
+                            
+                            console.log('오류 다이얼로그 패널 감지됨');
                             
                             // 명령어와 오류 메시지 추출
                             const labels = dialogPanel.querySelectorAll('.gwt-Label');
@@ -455,7 +630,7 @@ function Chat() {
                             setTimeout(() => {
                                 const closeButton = dialogPanel.querySelector('.dialogTextButton');
                                 if (closeButton) closeButton.click();
-                            }, 2000);
+                            }, 500);
                         }
                     }
                 }
@@ -492,47 +667,6 @@ function Chat() {
         return () => {
             clearInterval(checkMainApp);
             clearInterval(checkTestApp);
-        };
-    }, []);
-
-    // 명령어 검증 함수 업데이트
-    const validateCommand = async (command) => {
-        return new Promise((resolve) => {
-            if (!window.testApp) {
-                resolve({ valid: false, error: '테스트 앱이 초기화되지 않았습니다.' });
-                return;
-            }
-            
-            // 오류 메시지 초기화
-            setErrorMessage(null);
-            
-            try {
-                // 테스트 앱에서 명령 실행
-                const success = window.testApp.evalCommand(command.trim());
-                
-                // 오류 메시지 확인을 위해 잠시 대기
-                setTimeout(() => {
-                    if (errorMessage) {
-                        resolve({ valid: false, error: errorMessage });
-                    } else if (!success) {
-                        resolve({ valid: false, error: '명령어 실행이 실패했습니다.' });
-                    } else {
-                        resolve({ valid: true });
-                    }
-                }, 300); // 오류 다이얼로그 표시 대기 시간
-            } catch (e) {
-                resolve({ valid: false, error: e.message });
-            }
-        });
-    };
-
-    // 소켓 연결
-    useEffect(() => {
-        const newSocket = connectSocket();
-        if (newSocket) setSocket(newSocket);
-        
-        return () => {
-            if (newSocket) newSocket.disconnect();
         };
     }, []);
 
