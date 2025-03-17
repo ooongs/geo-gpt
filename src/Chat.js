@@ -308,7 +308,7 @@ function Chat() {
     // 오류 피드백을 위한 서버 요청 함수 개선
     const getCommandFeedback = async (originalMessages, responseText, errorDetails, retryCount = 0) => {
         try {
-            const userQuery = originalMessages.find(msg => msg.role === 'user')?.content || '';
+            const userQuery = [...originalMessages].reverse().find(msg => msg.role === 'user')?.content || '';
             const MAX_RETRY = 3; // 최대 재시도 횟수
 
             // 재시도 횟수 초과 확인
