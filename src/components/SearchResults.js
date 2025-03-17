@@ -20,15 +20,25 @@ const SearchResults = ({ searchResults, isSearching, selectCommand }) => {
 
   // 팝업 위치 계산 함수
   const calculatePopupPosition = (index) => {
-    if (!resultRefs.current[index]) return;
+    if (!resultRefs.current[index] || !containerRef.current) return;
     
     const element = resultRefs.current[index];
-    const rect = element.getBoundingClientRect();
-    const windowHeight = window.innerHeight;
+    const container = containerRef.current;
     
-    // 아래쪽에 표시했을 때 화면을 벗어나는지 확인 (더 엄격한 체크)
-    const popupHeight = 250; // 팝업 예상 높이 (여유롭게 설정)
-    if (rect.bottom + popupHeight > windowHeight) {
+    // 요소와 컨테이너의 위치 정보
+    const elementRect = element.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+    
+    // 컨테이너 내에서 요소의 상대적 위치 계산
+    const elementBottomRelativeToContainer = elementRect.bottom - containerRect.top;
+    
+    // 컨테이너 아래쪽에 남은 공간 계산
+    const spaceBelow = containerRect.height - elementBottomRelativeToContainer;
+    
+    // 팝업 높이와 비교하여 위치 결정
+    const popupHeight = 250; // 팝업 예상 높이
+    
+    if (spaceBelow < popupHeight) {
       setPopupPosition('top');
     } else {
       setPopupPosition('bottom');
