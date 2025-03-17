@@ -12,7 +12,7 @@ export const SUGGESTED_QUERIES = [
 // 모델 옵션 상수
 export const MODEL_OPTIONS = [
   { id: 'gpt-4o-mini', name: 'ChatGPT (GPT-4o-mini)' },
-  { id: 'deepseek-chat', name: 'DeepSeek Chat' }
+  { id: 'deepseek-chat', name: 'DeepSeek R1' }
 ];
 
 // 최대 피드백 재시도 횟수

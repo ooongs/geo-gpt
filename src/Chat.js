@@ -806,7 +806,8 @@ function Chat() {
                                                             cursor: 'pointer',
                                                             padding: 0,
                                                             fontSize: 'inherit',
-                                                            fontWeight: 'bold'
+                                                            fontWeight: 'bold',
+                                                            marginLeft: '8px'  // 여기에 간격 추가
                                                         }}
                                                     >
                                                         View Errors

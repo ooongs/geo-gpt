@@ -29,12 +29,12 @@ export const generateCommands = async (model, messages) => {
 };
 
 // 명령어 검색 API 호출
-export const searchCommands = async (query, topK = 5, threshold = 0.8) => {
+export const searchCommands = async (query, topK = 5) => {
   try {
     const response = await apiClient.post('/search-commands', {
       query,
       top_k: topK,
-      threshold
+      // threshold
     });
     return response.data.results;
   } catch (error) {
