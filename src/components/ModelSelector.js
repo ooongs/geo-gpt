@@ -19,7 +19,7 @@ const ModelSelector = ({ selectedModel, setSelectedModel, modelOptions }) => {
             onClick={() => setSelectedModel(model.id)}
             style={{
               padding: '4px 10px',
-              backgroundColor: selectedModel === model.id ? '#484fdcc2' : '#f0f0f0',
+              backgroundColor: selectedModel === model.id ? '#4f46e5' : '#f0f0f0',
               color: selectedModel === model.id ? 'white' : '#333',
               border: '1px solid #ddd',
               borderRadius: '12px',

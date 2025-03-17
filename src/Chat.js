@@ -753,13 +753,17 @@ function Chat() {
                         onClick={saveChat}
                         style={{
                             padding: '6px 12px',
-                            backgroundColor: '#484fdcc2',
+                            backgroundColor: '#4f46e5',
                             color: 'white',
                             border: 'none',
-                            borderRadius: '4px',
+                            borderRadius: '8px',
                             cursor: 'pointer',
-                            fontSize: '13px'
+                            fontSize: '13px',
+                            boxShadow: '0 2px 4px rgba(79, 70, 229, 0.3)',
+                            transition: 'all 0.2s ease'
                         }}
+                        onMouseOver={(e) => e.currentTarget.style.backgroundColor = '#4338ca'}
+                        onMouseOut={(e) => e.currentTarget.style.backgroundColor = '#4f46e5'}
                     >
                         保存聊天记录
                     </button>
@@ -838,7 +842,26 @@ function Chat() {
                             ) : (
                                 /* 일반 메시지 - 기존 코드 유지 */
                                 <div className={`message ${msg.role}`}>
-                                    <div className="message-content">
+                                    <div className="message-content" style={{
+                                        // 메시지 타입에 따른 스타일 적용
+                                        ...(msg.role === 'user' ? {
+                                            // 사용자 메시지 스타일 유지
+                                            backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                                            color: '#000000',
+                                            marginLeft: 'auto',
+                                            maxWidth: '100%',
+                                            border: 'none',
+                                            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)'
+                                        } : {
+                                            // assistant/gpt 메시지 스타일 업데이트: 사용자 메시지와 유사하게 만들기
+                                            backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                                            color: '#212529',
+                                            marginRight: 'auto',
+                                            maxWidth: '100%',
+                                            border: 'none',
+                                            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)'
+                                        })
+                                    }}>
                                         {/* 재생성된 메시지인 경우, 에러 블록을 먼저 표시 */}
                                         {msg.isRegenerated && msg.errorBlockId && errorBlocks.find(block => block.id === msg.errorBlockId) && (
                                             <div style={{
@@ -1030,10 +1053,34 @@ function Chat() {
                             }}
                             placeholder="请输入几何图形描述"
                             disabled={isLoading}
+                            style={{
+                                flex: 1,
+                                padding: '10px 16px',
+                                border: '1px solid #e0e7ff',
+                                borderRadius: '8px',
+                                fontSize: '13px',
+                                boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.05)',
+                                transition: 'all 0.2s ease'
+                            }}
                         />
                         <button 
                             onClick={sendMessage}
                             disabled={isLoading}
+                            style={{
+                                padding: '10px 20px',
+                                backgroundColor: '#4f46e5',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '8px',
+                                cursor: isLoading ? 'not-allowed' : 'pointer',
+                                fontSize: '13px',
+                                fontWeight: '500',
+                                boxShadow: '0 2px 4px rgba(79, 70, 229, 0.3)',
+                                opacity: isLoading ? 0.7 : 1,
+                                transition: 'all 0.2s ease'
+                            }}
+                            onMouseOver={(e) => !isLoading && (e.currentTarget.style.backgroundColor = '#4338ca')}
+                            onMouseOut={(e) => !isLoading && (e.currentTarget.style.backgroundColor = '#4f46e5')}
                         >
                             发送
                         </button>
