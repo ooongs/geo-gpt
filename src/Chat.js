@@ -438,7 +438,7 @@ function Chat() {
                             // 오류 피드백 메시지를 messages에 직접 추가
                             setMessages(prev => [...prev, {
                                 role: 'system',
-                                text: `**Command error occurred**\n${errors.map(err => 
+                                text: `${errors.map(err => 
                                     `Command: \`${err.command}\`\nError: ${err.error}`).join('\n\n')}`,
                                 errorBlockId: errorBlockId,
                                 isFeedback: true
