@@ -66,7 +66,7 @@ const SearchResults = ({ searchResults, isSearching, selectCommand }) => {
         justifyContent: 'space-between',
         alignItems: 'center'
       }}>
-        <span>相关 GeoGebra 指令</span>
+        <span>相关 GeoGebra 指令 </span>
         {isSearching && <span style={{ fontSize: '14px', color: '#666' }}>搜索中...</span>}
       </h3>
       
@@ -100,7 +100,7 @@ const SearchResults = ({ searchResults, isSearching, selectCommand }) => {
                   fontSize: '14px'
                 }}>
                   <span style={{ color: '#000' }}>相似度: </span>
-                  <span style={{ color: '#4CAF50' }}>{(result.similarity).toFixed(4)}%</span>
+                  <span style={{ color: '#4CAF50' }}>{(result.similarity).toFixed(4)}</span>
                 </span>
               </div>
               <div style={{

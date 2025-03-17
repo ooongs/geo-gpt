@@ -7,6 +7,44 @@ import MessageContent from './components/MessageContent';
 import SuggestedQueries from './components/SuggestedQueries';
 import ModelSelector from './components/ModelSelector';
 import SearchResults from './components/SearchResults';
+import { io } from 'socket.io-client';
+
+// API 기본 URL 설정
+const API_BASE_URL = 'http://localhost:8000';  // 개발 환경
+// const API_BASE_URL = '/api';  // 프로덕션 환경
+
+// axios 인스턴스 생성
+const apiClient = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+// 소켓 연결 함수
+const connectSocket = () => {
+  try {
+    const socket = io(API_BASE_URL + '/ws', {
+      transports: ['websocket'],
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000
+    });
+    
+    socket.on('connect', () => {
+      console.log('소켓 서버 연결됨');
+    });
+    
+    socket.on('connect_error', (err) => {
+      console.error('소켓 연결 오류:', err);
+    });
+    
+    return socket;
+  } catch (err) {
+    console.error('소켓 초기화 오류:', err);
+    return null;
+  }
+};
 
 function Chat() {
     // 상태 관리
@@ -24,6 +62,10 @@ function Chat() {
     ]);
     const [selectedModel, setSelectedModel] = useState('gpt-4o-mini');
     const [errorMessage, setErrorMessage] = useState(null);
+    const [feedbackInProgress, setFeedbackInProgress] = useState(false);
+    const [commandErrors, setCommandErrors] = useState([]);
+    const testAppRef = useRef(null);
+    const [socket, setSocket] = useState(null);
 
     // 메시지 컨테이너 참조
     const messagesEndRef = useRef(null);
@@ -65,6 +107,100 @@ function Chat() {
         setIsSearching(false);
     };
 
+    // 명령어 테스트 실행 함수
+    const testCommands = async (commands) => {
+        const testApp = window.testApp;
+        if (!testApp) {
+            console.error('테스트용 GeoGebra 앱이 초기화되지 않았습니다.');
+            return { valid: false, errors: ['테스트 앱 초기화 실패'] };
+        }
+        
+        // 테스트 앱 초기화
+        testApp.reset();
+        
+        const errors = [];
+        const validCommands = [];
+        
+        // errorMessage 상태를 체크하기 위한 Promise 생성 함수
+        const waitForError = () => {
+            return new Promise(resolve => {
+                // 짧은 시간 후 현재 에러 메시지 확인
+                setTimeout(() => {
+                    resolve(errorMessage);
+                }, 300); // 에러 다이얼로그 표시 및 Observer 처리 시간 고려
+            });
+        };
+        
+        // 각 명령어 개별 테스트
+        for (const command of commands) {
+            if (!command.trim()) continue;
+            
+            setErrorMessage(null); // 에러 메시지 초기화
+            
+            try {
+                // 명령어 실행
+                const success = testApp.evalCommand(command.trim());
+                
+                // 에러 메시지 확인을 위해 잠시 대기
+                const error = await waitForError();
+                
+                if (error || !success) {
+                    errors.push({
+                        command: command.trim(),
+                        error: error || '알 수 없는 오류'
+                    });
+                } else {
+                    validCommands.push(command.trim());
+                }
+            } catch (e) {
+                errors.push({
+                    command: command.trim(),
+                    error: e.message
+                });
+            }
+        }
+        
+        return {
+            valid: errors.length === 0,
+            errors,
+            validCommands
+        };
+    };
+    
+    // 오류 피드백을 위한 서버 요청 함수
+    const getCommandFeedback = async (originalMessages, errorDetails) => {
+        try {
+            setFeedbackInProgress(true);
+            
+            // 에러 정보를 포함한 추가 메시지 생성
+            const feedbackMessages = [...originalMessages, {
+                role: 'user',
+                content: `다음 명령어 실행 중 오류가 발생했습니다. 수정된 명령어를 제공해주세요:\n\n${
+                    errorDetails.map(err => `명령어: ${err.command}\n오류: ${err.error}`).join('\n\n')
+                }`
+            }];
+            
+            // 서버에 피드백 요청
+            const response = await axios.post(
+                'http://localhost:8000/generate-commands',
+                {
+                    model: selectedModel,
+                    messages: feedbackMessages.map(msg => ({
+                        role: msg.role,
+                        content: msg.content || msg.text
+                    }))
+                }
+            );
+            
+            return response.data.content;
+        } catch (error) {
+            console.error('피드백 요청 오류:', error);
+            return '명령어 수정 중 오류가 발생했습니다.';
+        } finally {
+            setFeedbackInProgress(false);
+        }
+    };
+    
     // 메시지 전송 함수
     const sendMessage = async () => {
         if (!input.trim() || isLoading) return;
@@ -74,15 +210,11 @@ function Chat() {
         setInput('');
         setIsLoading(true);
         
-        
-        const app = window.app1;
-        app.reset();
-        // 동시에 명령어 검색 요청 보내기
-        searchCommands(input);
+        // 테스트 앱 초기화
+        if (window.testApp) window.testApp.reset();
         
         try {
             // API 요청 준비
-            console.log('sending message...')
             const apiMessages = messages.map(msg => ({
                 role: msg.role,
                 content: msg.text
@@ -94,11 +226,9 @@ function Chat() {
                 content: input
             });
             
-            console.log('API Messages:', apiMessages);
-            
-            // 로컬 FastAPI 서버 호출
+            // 로컬 서버 호출
             const response = await axios.post(
-                'http://localhost:8000/chat',
+                'http://localhost:8000/generate-commands',
                 {
                     model: selectedModel,
                     messages: apiMessages
@@ -107,58 +237,104 @@ function Chat() {
             
             const responseText = response.data.content;
             
-            // 응답 처리
-            const normalizedText = responseText.replace(/\n{2,}/g, '\n');
-            const commands = normalizedText.match(/```\s*([\s\S]*?)\s*```/s);
+            // 명령어 추출
+            const commands = responseText.match(/```\s*([\s\S]*?)\s*```/s);
             
-            console.log('responseText: ', responseText);
-            console.log('normalizedText: ', normalizedText);
-            console.log('commands: ', commands);
-            
-            // GeoGebra 명령어 실행
             if (commands && commands[1]) {
-                setErrorMessage(null); // 새 명령 실행 전 오류 메시지 초기화
-                const commandLines = commands[1].split('\n');
-                const executedCommands = [];
+                const commandLines = commands[1].split('\n').filter(cmd => cmd.trim());
                 
-                commandLines.forEach(command => {
-                    if (!command.trim()) return;
+                // 모든 명령어 검증
+                let hasErrors = false;
+                const errors = [];
+                
+                for (const command of commandLines) {
+                    if (!command.trim()) continue;
                     
-                    try {
-                        const success = app.evalCommand(command.trim());
-                        executedCommands.push({
-                            command: command.trim(),
-                            success: success
+                    const result = await validateCommand(command);
+                    if (!result.valid) {
+                        hasErrors = true;
+                        errors.push({
+                            command: command,
+                            error: result.error
                         });
-                        
-                        if (!success) {
-                            console.log(`명령 실행 실패: ${command}`);
-                            // 오류는 MutationObserver가 캡처할 것임
-                        }
-                    } catch (error) {
-                        console.error('명령 실행 예외:', error);
                     }
-                });
+                }
                 
-                // 실행 결과 저장 (선택 사항)
-                console.log('명령 실행 결과:', executedCommands);
+                if (hasErrors) {
+                    // 오류가 있는 경우 피드백 요청
+                    console.log('명령어 오류 발견:', errors);
+                    setCommandErrors(errors);
+                    
+                    // 피드백 요청
+                    const updatedResponse = await getCommandFeedback(apiMessages, errors);
+                    
+                    // 수정된 응답 메시지 추가
+                    const assistantMessage = {
+                        role: 'assistant',
+                        text: updatedResponse
+                    };
+                    setMessages(prev => [...prev, assistantMessage]);
+                    
+                    // 수정된 명령어 추출 및 실행
+                    const newCommands = updatedResponse.match(/```\s*([\s\S]*?)\s*```/s);
+                    if (newCommands && newCommands[1]) {
+                        // 메인 앱 초기화
+                        if (window.app1) window.app1.reset();
+                        
+                        const newCommandLines = newCommands[1].split('\n').filter(cmd => cmd.trim());
+                        // 각 명령어 실행 (성공한 것만)
+                        for (const command of newCommandLines) {
+                            if (!command.trim()) continue;
+                            
+                            const result = await validateCommand(command);
+                            if (result.valid && window.app1) {
+                                window.app1.evalCommand(command.trim());
+                            }
+                        }
+                    }
+                } else {
+                    // 오류가 없는 경우 바로 실행
+                    const assistantMessage = {
+                        role: 'assistant',
+                        text: responseText
+                    };
+                    setMessages(prev => [...prev, assistantMessage]);
+                    
+                    // 메인 앱 초기화
+                    if (window.app1) window.app1.reset();
+                    
+                    // 검증된 명령어 모두 실행
+                    for (const command of commandLines) {
+                        if (command.trim() && window.app1) {
+                            window.app1.evalCommand(command.trim());
+                        }
+                    }
+                }
+            } else {
+                // 명령어가 없는 경우 메시지만 추가
+                const assistantMessage = {
+                    role: 'assistant',
+                    text: responseText
+                };
+                setMessages(prev => [...prev, assistantMessage]);
             }
-            
-            // 응답 메시지 추가
-            const assistantMessage = {
-                role: 'assistant',
-                text: responseText
-            };
-            setMessages(prev => [...prev, assistantMessage]);
-            
         } catch (error) {
-            console.error('Error:', error);
-            setMessages(prev => [...prev, {
+            console.error('API 요청 오류:', error);
+            
+            // 서버 연결 오류 처리
+            if (error.code === 'ERR_NETWORK') {
+              setMessages(prev => [...prev, {
                 role: 'assistant',
-                text: '抱歉，发生错误。'
-            }]);
+                text: '서버 연결 오류가 발생했습니다. 백엔드 서버가 실행 중인지 확인해주세요.'
+              }]);
+            } else {
+              setMessages(prev => [...prev, {
+                role: 'assistant',
+                text: '오류가 발생했습니다: ' + (error.message || '알 수 없는 오류')
+              }]);
+            }
         }
-
+        
         setIsLoading(false);
     };
 
@@ -247,22 +423,10 @@ function Chat() {
                     for (const node of mutation.addedNodes) {
                         // 상위 요소가 dialogComponent인지 확인
                         if (node.classList && node.classList.contains('dialogComponent')) {
-                            console.log('오류 다이얼로그 감지됨:', node);
-                            
-                            // 오류 내용 추출 - dialogContent 내부만 선택
-                            const dialogContent = node.querySelector('.dialogContent');
-                            if (dialogContent) {
-                                // dialogContent 내의 레이블만 선택
-                                const labels = dialogContent.querySelectorAll('.gwt-Label');
-                                
-                                // 레이블 텍스트 모으기
-                                const errorParts = Array.from(labels)
-                                    .map(label => label.textContent.trim())
-                                    .filter(text => text); // 빈 문자열 제거
-                                
-                                const errorMessage = errorParts.join(' ');
-                                console.log('오류 내용:', errorMessage);
-                                setErrorMessage(errorMessage);
+                            const errorMsg = extractErrorMessage(node);
+                            if (errorMsg) {
+                                console.log('오류 내용:', errorMsg);
+                                setErrorMessage(errorMsg);
                             }
                             
                             // 자동으로 다이얼로그 닫기
@@ -304,9 +468,77 @@ function Chat() {
         return () => observer.disconnect();
     }, []);
 
+    // GeoGebra 테스트 앱 초기화 관련 코드 추가
+    useEffect(() => {
+        // 메인 앱 로드 확인
+        const checkMainApp = setInterval(() => {
+            if (window.app1) {
+                clearInterval(checkMainApp);
+                console.log('메인 GeoGebra 앱이 초기화되었습니다.');
+            }
+        }, 500);
+        
+        // 테스트 앱 로드 확인
+        const checkTestApp = setInterval(() => {
+            if (window.testApp) {
+                clearInterval(checkTestApp);
+                console.log('테스트 GeoGebra 앱이 초기화되었습니다.');
+                
+                // 직접적인 오류 리스너 대신 MutationObserver만 사용
+                console.log('테스트 앱 초기화 완료 - MutationObserver로 오류 감지');
+            }
+        }, 500);
+        
+        return () => {
+            clearInterval(checkMainApp);
+            clearInterval(checkTestApp);
+        };
+    }, []);
+
+    // 명령어 검증 함수 업데이트
+    const validateCommand = async (command) => {
+        return new Promise((resolve) => {
+            if (!window.testApp) {
+                resolve({ valid: false, error: '테스트 앱이 초기화되지 않았습니다.' });
+                return;
+            }
+            
+            // 오류 메시지 초기화
+            setErrorMessage(null);
+            
+            try {
+                // 테스트 앱에서 명령 실행
+                const success = window.testApp.evalCommand(command.trim());
+                
+                // 오류 메시지 확인을 위해 잠시 대기
+                setTimeout(() => {
+                    if (errorMessage) {
+                        resolve({ valid: false, error: errorMessage });
+                    } else if (!success) {
+                        resolve({ valid: false, error: '명령어 실행이 실패했습니다.' });
+                    } else {
+                        resolve({ valid: true });
+                    }
+                }, 300); // 오류 다이얼로그 표시 대기 시간
+            } catch (e) {
+                resolve({ valid: false, error: e.message });
+            }
+        });
+    };
+
+    // 소켓 연결
+    useEffect(() => {
+        const newSocket = connectSocket();
+        if (newSocket) setSocket(newSocket);
+        
+        return () => {
+            if (newSocket) newSocket.disconnect();
+        };
+    }, []);
+
     return (
         <div style={{ display: 'flex', gap: '20px'}}>
-            {/* GeoGebra 컴포넌트 */}
+            {/* 메인 GeoGebra 컴포넌트 */}
             <Geogebra
                 id='app1'
                 width="800"
@@ -315,7 +547,19 @@ function Chat() {
                 showToolBar
                 showAlgebraInput
             />
-
+            
+            {/* 보이지 않는 테스트용 GeoGebra 컴포넌트 */}
+            <div style={{ position: 'absolute', width: '1px', height: '1px', overflow: 'hidden' }}>
+                <Geogebra
+                    id='testApp'
+                    width="400"
+                    height="400"
+                    showMenuBar={false}
+                    showToolBar={false}
+                    showAlgebraInput={false}
+                />
+            </div>
+            
             {/* 채팅 인터페이스 */}
             <div className="chat-container" style={{ display: 'flex', flexDirection: 'column', flex: 1, width: '500px' }}>
                 {/* 모델 선택 및 채팅 저장 버튼 */}
@@ -402,6 +646,37 @@ function Chat() {
                         </button>
                     </div>
                 </div>
+                
+                {/* 피드백 진행 중 표시 */}
+                {feedbackInProgress && (
+                    <div style={{
+                        padding: '10px',
+                        backgroundColor: '#e3f2fd',
+                        borderRadius: '4px',
+                        margin: '10px 0'
+                    }}>
+                        명령어 오류를 분석하고 수정된 응답을 생성 중입니다...
+                    </div>
+                )}
+                
+                {/* 기존 에러 메시지 표시 */}
+                {errorMessage && (
+                    <div className="error-message" style={{
+                        backgroundColor: '#ffebee',
+                        color: '#d32f2f',
+                        padding: '10px',
+                        borderRadius: '4px',
+                        margin: '10px 0',
+                        fontSize: '14px'
+                    }}>
+                        <h4 style={{ margin: '0 0 5px 0' }}>GeoGebra 명령 오류:</h4>
+                        <pre style={{ 
+                            margin: '0',
+                            whiteSpace: 'pre-wrap',
+                            fontSize: '13px'
+                        }}>{errorMessage}</pre>
+                    </div>
+                )}
             </div>
 
             {/* 유사한 명령어 검색 결과 컴포넌트 */}
@@ -409,25 +684,6 @@ function Chat() {
                 searchResults={searchResults}
                 isSearching={isSearching}
             />
-
-            {/* 오류 메시지 표시 */}
-            {errorMessage && (
-                <div className="error-message" style={{
-                    backgroundColor: '#ffebee',
-                    color: '#d32f2f',
-                    padding: '10px',
-                    borderRadius: '4px',
-                    margin: '10px 0',
-                    fontSize: '14px'
-                }}>
-                    <h4 style={{ margin: '0 0 5px 0' }}>GeoGebra 명령 오류:</h4>
-                    <pre style={{ 
-                        margin: '0',
-                        whiteSpace: 'pre-wrap',
-                        fontSize: '13px'
-                    }}>{errorMessage}</pre>
-                </div>
-            )}
         </div>
     );
 }
